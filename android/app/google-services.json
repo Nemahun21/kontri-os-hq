@@ -1,0 +1,154 @@
+{
+  "project_info": {
+    "project_number": "278494102812",
+    "project_id": "user-login-c3a42",
+    "storage_bucket": "user-login-c3a42.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278494102812:android:6a51b6a2df5b5ca06b66d9",
+        "android_client_info": {
+          "package_name": "com.nemahun21.kohntri_os_hq"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmV8K2WjOvsUEMMgbdibtopvJI91cVOAU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "278494102812-nd434cljiieuv6bulgvoo46fbus9g9uj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nemahun21.kohntri_os_hq"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278494102812:android:63bbeed93ecc09fd6b66d9",
+        "android_client_info": {
+          "package_name": "com.nemahun21.kohntri_os_hq"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmV8K2WjOvsUEMMgbdibtopvJI91cVOAU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "278494102812-nd434cljiieuv6bulgvoo46fbus9g9uj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nemahun21.kohntri_os_hq"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278494102812:android:04bcf8fd0937ff2f6b66d9",
+        "android_client_info": {
+          "package_name": "com.nemahun21.use"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmV8K2WjOvsUEMMgbdibtopvJI91cVOAU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "278494102812-nd434cljiieuv6bulgvoo46fbus9g9uj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nemahun21.kohntri_os_hq"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278494102812:android:c78694e53c534b286b66d9",
+        "android_client_info": {
+          "package_name": "com.nemahun21.userlogin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmV8K2WjOvsUEMMgbdibtopvJI91cVOAU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "278494102812-o95n1b6jlm4di3pp0joko0gp13jq0f3e.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "278494102812-nd434cljiieuv6bulgvoo46fbus9g9uj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nemahun21.kohntri_os_hq"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

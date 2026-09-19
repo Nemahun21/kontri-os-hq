@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SL Quiz</title>
+<style>
+body { font-family: Arial; background:#0f172a; color:white; text-align:center; }
+.container { max-width:500px; margin:auto; padding:20px; }
+.option { background:#1e293b; margin:8px; padding:12px; border-radius:8px; cursor:pointer; }
+.option:hover { background:#334155; }
+select { padding:8px; margin-bottom:10px; }
+</style>
+</head>
+<body><div class="container">
+<h2>🇸🇱 Leadership Quiz</h2><select onchange="setLang(this.value)">
+<option value="en">English</option>
+<option value="kr">Krio</option>
+</select><h3 id="question"></h3>
+<div id="options"></div>
+<button onclick="next()">Next</button>
+</div><script>
+let lang = "en";
+
+const quizData = {
+en: [
+{q:"Who is the current President of Sierra Leone?",o:["Ernest Bai Koroma","Julius Maada Bio","Ahmad Tejan Kabbah","Siaka Stevens"],a:1},
+{q:"Which leadership style is linked to reconstruction?",o:["Authoritarian","Democratic","Transformational","Laissez-faire"],a:2}
+],
+kr: [
+{q:"Udat na di current President of Sierra Leone?",o:["Ernest Bai Koroma","Julius Maada Bio","Ahmad Tejan Kabbah","Siaka Stevens"],a:1},
+{q:"Which kain leadership help fo rebuild di kontri?",o:["Strong rule","Democracy","Transformational","No control"],a:2}
+]
+};
+
+let i=0, score=0;
+
+function setLang(l){
+lang = l;
+i=0;
+load();
+}
+
+function load(){
+let q = quizData[lang][i];
+document.getElementById("question").innerText = q.q;
+
+let ops="";
+q.o.forEach((x,idx)=>{
+ops+=`<div class="option" onclick="pick(${idx})">${x}</div>`;
+});
+document.getElementById("options").innerHTML=ops;
+}
+
+function pick(idx){
+if(idx===quizData[lang][i].a){ score++; }
+}
+
+function next(){
+i++;
+if(i < quizData[lang].length){
+load();
+}else{
+document.body.innerHTML=`<h2>Score: ${score}</h2><button onclick="location.reload()">Restart</button>`;
+}
+}
+
+load();
+</script></body>
+</html>
