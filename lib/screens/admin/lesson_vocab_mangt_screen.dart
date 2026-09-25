@@ -4,8 +4,8 @@ import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 
 class LessonVocabularyManagementScreen extends StatefulWidget {
   final String contentType; // 'adventure' or 'language'
-  final String? category;   // Adventure only
-  final String? themeId;    // Language only
+  final String? category; // Adventure only
+  final String? themeId; // Language only
   final String title;
 
   const LessonVocabularyManagementScreen({
@@ -91,16 +91,19 @@ class _LessonVocabularyManagementScreenState
   Future<void> _showEditor({LessonVocabulary? item}) async {
     final isEdit = item != null;
     final termController = TextEditingController(text: item?.term ?? '');
-    final definitionController =
-        TextEditingController(text: item?.definition ?? '');
-    final pronunciationController =
-        TextEditingController(text: item?.pronunciation ?? '');
+    final definitionController = TextEditingController(
+      text: item?.definition ?? '',
+    );
+    final pronunciationController = TextEditingController(
+      text: item?.pronunciation ?? '',
+    );
     final exampleController = TextEditingController(text: item?.example ?? '');
     final emojiController = TextEditingController(text: item?.emoji ?? '');
-    final positionController =
-        TextEditingController(text: (item?.position ?? 1).toString());
-    final imageUrlController =
-        TextEditingController(text: item?.imageUrl ?? '');
+    // final positionController =
+    //     TextEditingController(text: (item?.position ?? 1).toString());
+    final imageUrlController = TextEditingController(
+      text: item?.imageUrl ?? '',
+    );
 
     // Only for Adventure
     String difficulty = item?.difficulty ?? _selectedDifficulty;
@@ -125,12 +128,12 @@ class _LessonVocabularyManagementScreenState
                         border: OutlineInputBorder(),
                       ),
                       items: const [
+                        DropdownMenuItem(value: 'easy', child: Text('💡 Easy')),
                         DropdownMenuItem(
-                            value: 'easy', child: Text('💡 Easy')),
-                        DropdownMenuItem(
-                            value: 'medium', child: Text('🔥 Medium')),
-                        DropdownMenuItem(
-                            value: 'hard', child: Text('🌊 Hard')),
+                          value: 'medium',
+                          child: Text('🔥 Medium'),
+                        ),
+                        DropdownMenuItem(value: 'hard', child: Text('🌊 Hard')),
                       ],
                       onChanged: (val) {
                         if (val != null) {
@@ -193,15 +196,15 @@ class _LessonVocabularyManagementScreenState
                       border: OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: positionController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Position',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                  // const SizedBox(height: 12),
+                  // TextField(
+                  //   controller: positionController,
+                  //   keyboardType: TextInputType.number,
+                  //   decoration: const InputDecoration(
+                  //     labelText: 'Position',
+                  //     border: OutlineInputBorder(),
+                  //   ),
+                  // ),
                 ],
               ),
             ),
@@ -222,6 +225,29 @@ class _LessonVocabularyManagementScreenState
                     ),
                   );
                   return;
+                }
+
+                int position;
+                if (isEdit && item != null) {
+                  position = item.position;
+                } else {
+                  // Find the highest position in the current filtered list, add 1
+                  final siblings = _items
+                      .where(
+                        (i) =>
+                            (_isAdventure && i.difficulty == difficulty) ||
+                            (_isLanguage),
+                      )
+                      .toList();
+
+                  if (siblings.isEmpty) {
+                    position = 1;
+                  } else {
+                    final maxPos = siblings
+                        .map((i) => i.position)
+                        .reduce((a, b) => a > b ? a : b);
+                    position = maxPos + 1;
+                  }
                 }
 
                 final vocab = LessonVocabulary(
@@ -245,7 +271,7 @@ class _LessonVocabularyManagementScreenState
                   imageUrl: imageUrlController.text.trim().isEmpty
                       ? null
                       : imageUrlController.text.trim(),
-                  position: int.tryParse(positionController.text) ?? 1,
+                  position: position,
                 );
 
                 if (isEdit) {
@@ -257,6 +283,19 @@ class _LessonVocabularyManagementScreenState
               },
               child: const Text('Save'),
             ),
+            if (isEdit && item != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Position: ${item.position}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -355,7 +394,9 @@ class _LessonVocabularyManagementScreenState
                       const SizedBox(height: 2),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 1),
+                          horizontal: 8,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: isSelected ? color : Colors.grey.shade300,
                           borderRadius: BorderRadius.circular(10),
@@ -365,8 +406,7 @@ class _LessonVocabularyManagementScreenState
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color:
-                                isSelected ? Colors.white : Colors.grey[700],
+                            color: isSelected ? Colors.white : Colors.grey[700],
                           ),
                         ),
                       ),
@@ -412,18 +452,17 @@ class _LessonVocabularyManagementScreenState
 
     if (_isLanguage) {
       headers = [
-        '#',
         'Word',
         'Translation',
         'Pronunciation',
         'Example',
         'Pos',
-        'Actions'
+        'Actions',
       ];
-      flexValues = [1, 3, 3, 2, 4, 1, 2];
+      flexValues = [3, 3, 2, 4, 1, 3];
     } else {
-      headers = ['#', 'Term', 'Definition', 'Example', 'Pos', 'Actions'];
-      flexValues = [1, 3, 4, 4, 1, 2];
+      headers = ['Term', 'Definition', 'Example', 'Pos', 'Actions'];
+      flexValues = [3, 4, 4, 1, 3];
     }
 
     return SingleChildScrollView(
@@ -436,18 +475,17 @@ class _LessonVocabularyManagementScreenState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               color: accent.withOpacity(0.1),
               child: Row(
                 children: [
-                   Icon(Icons.style, color: accent, size: 20),
+                  Icon(Icons.style, color: accent, size: 20),
                   const SizedBox(width: 8),
                   Text(
                     _isLanguage
                         ? 'Lesson Cards'
                         : '${_selectedDifficulty.toUpperCase()} Lesson Cards',
-                    style:  TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                       color: accent,
@@ -455,8 +493,7 @@ class _LessonVocabularyManagementScreenState
                   ),
                   const Spacer(),
                   Container(
-                    padding:  EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 3),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
                       color: accent,
                       borderRadius: BorderRadius.circular(12),
@@ -517,73 +554,89 @@ class _LessonVocabularyManagementScreenState
 
     cells.add(Text('${index + 1}', style: const TextStyle(fontSize: 12)));
 
-    cells.add(Row(
-      children: [
-        if (item.emoji != null && item.emoji!.isNotEmpty) ...[
-          Text(item.emoji!, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 6),
-        ],
-        Expanded(
-          child: Text(
-            item.term,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+    cells.add(
+      Row(
+        children: [
+          if (item.emoji != null && item.emoji!.isNotEmpty) ...[
+            Text(item.emoji!, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              item.term,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ),
-        ),
-      ],
-    ));
+        ],
+      ),
+    );
 
-    cells.add(Text(
-      item.definition,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 12),
-    ));
+    cells.add(
+      Text(
+        item.definition,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
 
     if (_isLanguage) {
-      cells.add(Text(
-        item.pronunciation ?? '—',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          fontStyle: item.pronunciation != null
-              ? FontStyle.italic
-              : FontStyle.normal,
-          color: Colors.grey[700],
+      cells.add(
+        Text(
+          item.pronunciation ?? '—',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            fontStyle: item.pronunciation != null
+                ? FontStyle.italic
+                : FontStyle.normal,
+            color: Colors.grey[700],
+          ),
         ),
-      ));
+      );
     }
 
-    cells.add(Text(
-      item.example ?? '—',
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 12),
-    ));
+    cells.add(
+      Text(
+        item.example ?? '—',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
 
     cells.add(Text('${item.position}', style: const TextStyle(fontSize: 12)));
 
-    cells.add(Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.edit, color: Colors.blue, size: 18),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: () => _editItem(item),
-        ),
-        const SizedBox(width: 4),
-        IconButton(
-          icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: () => _deleteItem(item),
-        ),
-      ],
-    ));
+    cells.add(
+      Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () => _editItem(item),
+            child: Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              child: const Icon(Icons.edit, color: Colors.blue, size: 16),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () => _deleteItem(item),
+            child: Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              child: const Icon(Icons.delete, color: Colors.red, size: 16),
+            ),
+          ),
+        ],
+      ),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -593,12 +646,22 @@ class _LessonVocabularyManagementScreenState
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: List.generate(cells.length, (i) {
+          final isActionColumn = i == cells.length - 1; 
+          final child = Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: cells[i],
+          );
+
+          if (isActionColumn) {
+            return SizedBox(
+              width: 72,
+              child: child,
+            ); 
+          }
+
           return Expanded(
-            flex: flexValues[i],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: cells[i],
-            ),
+            flex: i < flexValues.length ? flexValues[i] : 1,
+            child: child,
           );
         }),
       ),

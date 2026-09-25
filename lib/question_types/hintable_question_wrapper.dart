@@ -50,7 +50,7 @@ class HintableQuestionWrapper extends StatelessWidget {
                     onHint(); // Notify parent that hint was used
                     _showHintDialog(context);
                   },
-                  tooltip: 'Use hint (deducts points)',
+                  tooltip: 'Use hint: Deducts points)',
                 )
               else if (hintUsed)
                 const Icon(Icons.lightbulb, color: Colors.grey, size: 24),

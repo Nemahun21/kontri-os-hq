@@ -4,6 +4,7 @@ import 'package:kohntri_os_hq/services/language_question_service.dart';
 import 'package:kohntri_os_hq/utils/connectivity_helper.dart';
 import 'package:kohntri_os_hq/services/pending_operation_service.dart';
 import 'package:kohntri_os_hq/services/cache_service.dart';
+import 'package:kohntri_os_hq/widgets/compact_actions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LanguagesManagementScreen extends StatefulWidget {
@@ -19,7 +20,7 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
 
   List<Map<String, dynamic>> _languages = []; // each: {'id', 'name'}
   Map<String, int> _languageCounts = {};
-  Map<String, int> _themeCounts = {}; 
+  Map<String, int> _themeCounts = {};
   int _totalLangQuestions = 0;
   bool _isLoading = true;
 
@@ -34,21 +35,25 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
     try {
       final languagesFuture = _langService.getLanguages();
       final countsFuture = _langService.getLanguageCounts();
-       final themeCountsFuture = _langService.getThemeCountsByLanguage();
+      final themeCountsFuture = _langService.getThemeCountsByLanguage();
 
       final languages = await languagesFuture;
       final counts = await countsFuture;
-            final themeCounts = await themeCountsFuture;
-
+      final themeCounts = await themeCountsFuture;
 
       // Sort alphabetically by name
-      languages.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+      languages.sort(
+        (a, b) => (a['name'] as String).compareTo(b['name'] as String),
+      );
 
       setState(() {
         _languages = languages;
         _languageCounts = counts;
-          _themeCounts = themeCounts;
-        _totalLangQuestions = counts.values.fold(0, (sum, count) => sum + count);
+        _themeCounts = themeCounts;
+        _totalLangQuestions = counts.values.fold(
+          0,
+          (sum, count) => sum + count,
+        );
         _isLoading = false;
       });
     } catch (e) {
@@ -116,19 +121,23 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
       if (online) {
         await _langService.addLanguage(name, code);
         await _loadData();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Language "$name" added.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Language "$name" added.')));
       } else {
-        await PendingOperationService().enqueue(
-          'language_type',
-          'insert',
-          {'name': name, 'code': code},
-        );
-        final newLang = {'id': 'pending_${DateTime.now().millisecondsSinceEpoch}', 'name': name};
+        await PendingOperationService().enqueue('language_type', 'insert', {
+          'name': name,
+          'code': code,
+        });
+        final newLang = {
+          'id': 'pending_${DateTime.now().millisecondsSinceEpoch}',
+          'name': name,
+        };
         setState(() {
           _languages.add(newLang);
-          _languages.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+          _languages.sort(
+            (a, b) => (a['name'] as String).compareTo(b['name'] as String),
+          );
           _languageCounts[name] = 0;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -146,101 +155,103 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
     }
   }
 
-Future<void> _deleteLanguage(Map<String, dynamic> lang) async {
-  final id = lang['id'] as String;
-  final name = lang['name'] as String;
+  Future<void> _deleteLanguage(Map<String, dynamic> lang) async {
+    final id = lang['id'] as String;
+    final name = lang['name'] as String;
 
-  if (id.startsWith('pending_')) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Cannot delete pending language. Wait for sync.'),
-        backgroundColor: Colors.orange,
-      ),
-    );
-    return;
-  }
-
-  final count = _languageCounts[name] ?? 0;
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Delete Language'),
-      content: Text(
-        count > 0
-            ? 'Language "$name" has $count question(s). Deleting it will also delete all associated themes and questions. Are you sure?'
-            : 'Are you sure you want to delete language "$name"?',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete'),
-        ),
-      ],
-    ),
-  );
-  if (confirm != true) return;
-
-  try {
-    final online = await ConnectivityHelper.isOnline();
-    print('Deleting language ID: $id, online: $online'); // 👈 debug print
-
-  if (online) {
-  await _langService.deleteLanguage(id);
-
-  // Verify deletion
-  final check = await Supabase.instance.client
-      .from('language_type')
-      .select('id')
-      .eq('id', id)
-      .maybeSingle();
-
-  if (check != null) {
-    print('⚠️ Language still exists after delete – cascade may have failed.');
-    throw Exception('Failed to delete language from database.');
-  } else {
-    print('✅ Language deleted from Supabase.');
-  }
-
-  // Clear caches and reload
-  await CacheService().set('languages_list', null);
-  await CacheService().set('language_counts', null);
-  await _loadData();
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Language "$name" deleted.')),
-  );
-}
-     else {
-      // Offline: enqueue and update UI
-      await PendingOperationService().enqueue(
-        'language_type',
-        'delete',
-        {'id': id},
-      );
-      setState(() {
-        _languages.removeWhere((lang) => lang['id'] == id);
-        _languageCounts.remove(name);
-        _totalLangQuestions = _languageCounts.values.fold(0, (sum, count) => sum + count);
-      });
+    if (id.startsWith('pending_')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Language deleted offline – will sync when online.'),
+          content: Text('Cannot delete pending language. Wait for sync.'),
           backgroundColor: Colors.orange,
         ),
       );
+      return;
     }
-  } catch (e) {
-    print('Error deleting language: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+
+    final count = _languageCounts[name] ?? 0;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Language'),
+        content: Text(
+          count > 0
+              ? 'Language "$name" has $count question(s). Deleting it will also delete all associated themes and questions. Are you sure?'
+              : 'Are you sure you want to delete language "$name"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
+    if (confirm != true) return;
+
+    try {
+      final online = await ConnectivityHelper.isOnline();
+      print('Deleting language ID: $id, online: $online'); // 👈 debug print
+
+      if (online) {
+        await _langService.deleteLanguage(id);
+
+        // Verify deletion
+        final check = await Supabase.instance.client
+            .from('language_type')
+            .select('id')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (check != null) {
+          print(
+            '⚠️ Language still exists after delete – cascade may have failed.',
+          );
+          throw Exception('Failed to delete language from database.');
+        } else {
+          print('✅ Language deleted from Supabase.');
+        }
+
+        // Clear caches and reload
+        await CacheService().set('languages_list', null);
+        await CacheService().set('language_counts', null);
+        await _loadData();
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Language "$name" deleted.')));
+      } else {
+        // Offline: enqueue and update UI
+        await PendingOperationService().enqueue('language_type', 'delete', {
+          'id': id,
+        });
+        setState(() {
+          _languages.removeWhere((lang) => lang['id'] == id);
+          _languageCounts.remove(name);
+          _totalLangQuestions = _languageCounts.values.fold(
+            0,
+            (sum, count) => sum + count,
+          );
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Language deleted offline – will sync when online.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error deleting language: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
-}
- 
+
   Future<void> _onLanguageTap(String languageId, String languageName) async {
     await Navigator.push(
       context,
@@ -290,7 +301,10 @@ Future<void> _deleteLanguage(Map<String, dynamic> lang) async {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
@@ -304,17 +318,29 @@ Future<void> _deleteLanguage(Map<String, dynamic> lang) async {
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.language, color: Colors.white, size: 28),
+                            const Icon(
+                              Icons.language,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                             const SizedBox(width: 12),
                             const Text(
                               'Total Language Questions:',
-                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
                         Text(
                           '$_totalLangQuestions',
-                          style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
@@ -322,126 +348,228 @@ Future<void> _deleteLanguage(Map<String, dynamic> lang) async {
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16),
-                  
+
                   child: Text(
                     'Languages',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
                 const SizedBox(height: 8),
-                
-              Expanded(
-  child: _languages.isEmpty
-      ? const Center(child: Text('No languages available.'))
-      : SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            children: [
-              // ---- Header ----
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.1),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                  border: Border.all(color: Colors.grey.shade400),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(flex: 3, child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('Language', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    )),
-                    Container(width: 1, color: Colors.grey.shade400),
-                    Expanded(flex: 1, child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Text('Questions', style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-                    )),
-                    Container(width: 1, color: Colors.grey.shade400),
-                    Expanded(flex: 1, child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('Themes', style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-                    )),
-                    Container(width: 1, color: Colors.grey.shade400),
-                    Expanded(flex: 2, child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text('Actions', style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-                    )),
-                  ],
-                ),
-              ),
-              // ---- Data rows ----
-              ..._languages.asMap().entries.map((entry) {
-                final index = entry.key;
-                final lang = entry.value;
-                final id = lang['id'] as String;
-                final name = lang['name'] as String;
-                final questionCount = _languageCounts[name] ?? 0;
-                final themeCount = _themeCounts[id] ?? 0;
-                final isPending = id.startsWith('pending_');
-                return Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(color: Colors.grey.shade400),
-                      right: BorderSide(color: Colors.grey.shade400),
-                      bottom: BorderSide(color: Colors.grey.shade400),
-                    ),
-                    color: index.isEven ? Colors.white : Colors.grey.shade50, // zebra striping
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(flex: 3, child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Row(
-                          children: [
-                            Expanded(child: Text(name)),
-                            if (isPending) Icon(Icons.sync, size: 16, color: Colors.orange),
-                          ],
-                        ),
-                      )),
-                      Container(width: 1, color: Colors.grey.shade400),
-                      Expanded(flex: 1, child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('$questionCount', textAlign: TextAlign.center),
-                      )),
-                      Container(width: 1, color: Colors.grey.shade400),
-                      Expanded(flex: 1, child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Text('$themeCount', textAlign: TextAlign.center),
-                      )),
-                      Container(width: 1, color: Colors.grey.shade400),
-                      Expanded(flex: 2, child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_forward, color: Colors.blue),
-                              onPressed: isPending ? null : () => _onLanguageTap(id, name),
-                              tooltip: 'View themes',
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.delete,
-                                color: isPending ? Colors.grey : Colors.red,
+
+                Expanded(
+                  child: _languages.isEmpty
+                      ? const Center(child: Text('No languages available.'))
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            children: [
+                              // ---- Header ----
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: accentColor.withOpacity(0.1),
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(8),
+                                  ),
+                                  border: Border.all(
+                                    color: Colors.grey.shade400,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: Text(
+                                          'Language',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    Expanded(
+                                      flex: 1,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 2,
+                                        ),
+                                        child: Text(
+                                          'Questions',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    Expanded(
+                                      flex: 1,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: Text(
+                                          'Themes',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    Expanded(
+                                      flex: 2,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: Text(
+                                          'Actions',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              onPressed: isPending ? null : () => _deleteLanguage(lang),
-                              tooltip: 'Delete language',
-                            ),
-                          ],
+                              // ---- Data rows ----
+                              ..._languages.asMap().entries.map((entry) {
+                                final index = entry.key;
+                                final lang = entry.value;
+                                final id = lang['id'] as String;
+                                final name = lang['name'] as String;
+                                final questionCount =
+                                    _languageCounts[name] ?? 0;
+                                final themeCount = _themeCounts[id] ?? 0;
+                                final isPending = id.startsWith('pending_');
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      left: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      right: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      bottom: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    color: index.isEven
+                                        ? Colors.white
+                                        : Colors.grey.shade50, // zebra striping
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(child: Text(name)),
+                                              if (isPending)
+                                                Icon(
+                                                  Icons.sync,
+                                                  size: 16,
+                                                  color: Colors.orange,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        width: 1,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          child: Text(
+                                            '$questionCount',
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        width: 1,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      Expanded(
+                                        flex: 1,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          child: Text(
+                                            '$themeCount',
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        width: 1,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          child: CompactActions(
+                                            editIcon: Icons.arrow_forward,
+                                            onEdit: isPending
+                                                ? null
+                                                : () =>
+                                                      _onLanguageTap(id, name),
+                                            onDelete: isPending
+                                                ? null
+                                                : () => _deleteLanguage(lang),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ],
+                          ),
                         ),
-                      )),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ],
-          ),
-        ),
-),
+                ),
               ],
             ),
     );
   }
-
 }

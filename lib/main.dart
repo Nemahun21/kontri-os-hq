@@ -6,16 +6,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
   );
 
-  // ⚠️ Skip local database operations on web (sqflite not needed)
   if (!kIsWeb) {
     await SyncService().syncPendingOperations();
   }
@@ -30,7 +29,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // Also skip connectivity sync on web
     if (!kIsWeb) {
-      Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> result) {
+      Connectivity().onConnectivityChanged.listen((
+        List<ConnectivityResult> result,
+      ) {
         if (result.any((r) => r != ConnectivityResult.none)) {
           SyncService().syncPendingOperations();
         }

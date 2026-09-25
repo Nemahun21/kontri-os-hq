@@ -11,6 +11,7 @@ import 'package:kohntri_os_hq/models/language_question.dart';
 import 'package:kohntri_os_hq/models/language_theme.dart';
 import 'package:kohntri_os_hq/models/question.dart';
 import 'package:kohntri_os_hq/screens/preview_question_screen.dart';
+import 'package:kohntri_os_hq/services/csv_content_importer.dart';
 import 'package:kohntri_os_hq/services/daily_challenge_service.dart';
 import 'package:kohntri_os_hq/services/language_question_service.dart';
 import 'package:kohntri_os_hq/services/question_service.dart';
@@ -1747,6 +1748,38 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     }
   }
 
+  Future<void> _openCsvImport() async {
+    CsvImportMode mode;
+    if (widget.isDailyChallenge) {
+      mode = CsvImportMode.daily;
+    } else if (_isLanguageMode) {
+      mode = CsvImportMode.language;
+    } else {
+      mode = CsvImportMode.adventure;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CsvQuestionImporter(
+          mode: mode,
+          category: _selectedCategory,
+          difficulty: _selectedDifficulty,
+          languageId: _selectedLanguageId,
+          themeId: _selectedThemeId,
+          startingPosition: _position,
+          dailyChallengeId: DailyChallengeService.activeDailyChallengeId,
+        ),
+      ),
+    );
+
+    // Refresh difficulty counts / next position after import
+    if (mounted) {
+      await _loadDifficultyCounts();
+      await _updateNextPosition();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1759,6 +1792,11 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Import CSV',
+            onPressed: _isLoading ? null : _openCsvImport,
+          ),
           IconButton(
             icon: const Icon(Icons.preview),
             onPressed: _isLoading ? null : _showPreview,

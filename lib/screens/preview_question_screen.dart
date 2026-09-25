@@ -1,6 +1,6 @@
 // lib/screens/preview_question_screen.dart
 import 'package:flutter/material.dart';
-import 'package:kohntri_os_hq/shared/question_types/question_factory.dart';
+import 'package:kohntri_os_hq/question_types/question_factory.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 class PreviewQuestionScreen extends StatelessWidget {

@@ -440,15 +440,15 @@ class _ContentBankScreenState extends State<ContentBankScreen> {
         builder: (_) => _FullTableScreen(
           title: title,
           accentColor: accentColor,
-          headers: const ['#', 'Content', 'Details', 'Pos', 'Actions'],
-          flexValues: const [1, 5, 4, 1, 2],
+          headers: const [ 'Content', 'Details', 'Pos', 'Actions'],
+          flexValues: const [5, 4, 1, 3],
           rows: items.asMap().entries.map((entry) {
             final i = entry.key;
             final item = entry.value;
             final text = item[titleKey]?.toString() ?? 'Untitled';
             return _FullTableRow(
               index: i,
-              flexValues: const [1, 5, 4, 1, 2],
+              flexValues: const [5, 4, 1, 3],
               onTap: () => _showItemDetail(item, text, contentType),
               cells: [
                 Text('${i + 1}', style: const TextStyle(fontSize: 12)),

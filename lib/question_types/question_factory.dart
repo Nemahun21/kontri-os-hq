@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/models/question.dart';
-import 'package:kohntri_os_hq/shared/question_types/audio_enabled_question.dart';
-import 'package:kohntri_os_hq/shared/question_types/audio_guess_widget.dart';
-import 'package:kohntri_os_hq/shared/question_types/hintable_question_wrapper.dart';
+import 'package:kohntri_os_hq/question_types/audio_enabled_question.dart';
+import 'package:kohntri_os_hq/question_types/audio_guess_widget.dart';
+import 'package:kohntri_os_hq/question_types/hintable_question_wrapper.dart';
 import 'multiple_choice_widget.dart';
 import 'true_false_widget.dart';
 import 'drag_and_drop_widget.dart';

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:kohntri_os_hq/services/daily_content_csv_importer.dart';
 import 'package:kohntri_os_hq/services/daily_content_service.dart';
+import 'package:kohntri_os_hq/widgets/compact_actions.dart';
 import 'package:kohntri_os_hq/widgets/loading_overlay.dart';
 import 'package:kohntri_os_hq/utils/connectivity_helper.dart';
 import 'package:kohntri_os_hq/services/pending_operation_service.dart';
@@ -486,6 +488,21 @@ class _DailyContentManagementScreenState
         elevation: 0,
         actions: [
           IconButton(
+      icon: const Icon(Icons.upload_file),
+      tooltip: 'Import CSV',
+      onPressed: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DailyContentCsvImporter(
+              contentType: widget.contentType,
+            ),
+          ),
+        );
+        _loadData();
+      },
+    ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
             tooltip: 'Refresh',
@@ -580,22 +597,22 @@ class _DailyContentManagementScreenState
   List<String> _getHeaders() {
     switch (widget.contentType) {
       case ContentType.proverb:
-        return ['#', 'Proverb', 'Meaning', 'Source', 'Pos', 'Actions'];
+        return [ 'Proverb', 'Meaning', 'Source', 'Pos', 'Actions'];
       case ContentType.funFact:
-        return ['#', 'Fact', 'Category', 'Pos', 'Actions'];
+        return [ 'Fact', 'Category', 'Pos', 'Actions'];
       case ContentType.challenge:
-        return ['#', 'Question', 'Options', 'Correct', 'Pts', 'Pos', 'Actions'];
+        return [ 'Question', 'Options', 'Correct', 'Pts', 'Pos', 'Actions'];
     }
   }
 
   List<int> _getFlexValues() {
     switch (widget.contentType) {
       case ContentType.proverb:
-        return [1, 5, 4, 3, 1, 2];
+        return [ 5, 4, 3, 1, 3];
       case ContentType.funFact:
-        return [1, 5, 3, 1, 2];
+        return [5, 3, 1, 3];
       case ContentType.challenge:
-        return [1, 5, 4, 1, 1, 1, 2];
+        return [5, 4, 1, 1, 1, 3];
     }
   }
 
@@ -632,9 +649,6 @@ class _DailyContentManagementScreenState
     final flex = _getFlexValues();
 
     final List<Widget> cells = [];
-
-    // #
-    cells.add(Text('${index + 1}', style: const TextStyle(fontSize: 12)));
 
     // Text / Question
     final text = (item['text'] ?? item['question'] ?? '').toString();
@@ -702,37 +716,10 @@ class _DailyContentManagementScreenState
       style: const TextStyle(fontSize: 12),
     ));
 
-    // Actions
-    cells.add(Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: Icon(
-            Icons.edit,
-            color: isPending ? Colors.grey : Colors.blue,
-            size: 18,
-          ),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: isPending ? null : () => _editItem(item),
-          tooltip: 'Edit',
-        ),
-        const SizedBox(width: 4),
-        IconButton(
-          icon: Icon(
-            Icons.delete,
-            color: isPending ? Colors.grey : Colors.red,
-            size: 18,
-          ),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: isPending ? null : () => _deleteItem(item),
-          tooltip: 'Delete',
-        ),
-      ],
-    ));
-
+   cells.add(CompactActions(
+  onEdit: isPending ? null : () => _editItem(item),
+  onDelete: isPending ? null : () => _deleteItem(item),
+));
     return Container(
       decoration: BoxDecoration(
         color: index.isEven ? Colors.white : Colors.grey.shade50,

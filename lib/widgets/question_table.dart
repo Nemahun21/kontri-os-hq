@@ -677,13 +677,17 @@ class _SimpleQuestionDialogState extends State<_SimpleQuestionDialog> {
               if (_selectedType != QuestionType.textInput) ...[
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int>(
+                  isExpanded: true,
                   value: _correctAnswerIndex < _optionsList.length
                       ? _correctAnswerIndex
                       : null,
                   items: _optionsList.asMap().entries.map((entry) {
                     return DropdownMenuItem(
                       value: entry.key,
-                      child: Text('${entry.key + 1}: ${entry.value}'),
+                      child: Text('${entry.key + 1}: ${entry.value}',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      ),
                     );
                   }).toList(),
                   onChanged: (val) =>
