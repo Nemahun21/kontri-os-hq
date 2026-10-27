@@ -269,7 +269,7 @@ class _ContentBankScreenState extends State<ContentBankScreen> {
                   ),
                   const SizedBox(height: 16),
                   _buildDailyPreview(
-                    title: 'Daily Fun Facts',
+                    title: 'Daily Interesting Factss',
                     icon: Icons.lightbulb,
                     accentColor: Colors.purple.shade600,
                     items: _funFacts,

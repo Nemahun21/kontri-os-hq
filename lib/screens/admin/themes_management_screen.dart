@@ -267,39 +267,53 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
-                                vertical: 6,
+                                vertical: 6, 
                               ),
-                              child: Row(
-  mainAxisAlignment: MainAxisAlignment.center,
-  children: [
-    IconButton(
-      icon: const Icon(Icons.school, color: Colors.purple),
-      tooltip: 'Manage lesson cards',
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LessonVocabularyManagementScreen(
-              contentType: 'language',
-              themeId: theme.id,
-              title: '${widget.languageName} • ${theme.name}',
-            ),
-          ),
-        );
-      },
-    ),
-    IconButton(
-      icon: const Icon(Icons.visibility, color: Colors.blue),
-      onPressed: () => _onThemeTap(theme),
-      tooltip: 'View questions',
-    ),
-    IconButton(
-      icon: const Icon(Icons.delete, color: Colors.red),
-      onPressed: () => _deleteTheme(theme),
-      tooltip: 'Delete theme',
-    ),
-  ],
-),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.school,
+                                        color: Colors.purple,
+                                      ),
+                                      tooltip: 'Manage lesson cards',
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                LessonVocabularyManagementScreen(
+                                                  contentType: 'language',
+                                                  themeId: theme.id,
+                                                  title:
+                                                      '${widget.languageName} • ${theme.name}',
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.visibility,
+                                        color: Colors.blue,
+                                      ),
+                                      onPressed: () => _onThemeTap(theme),
+                                      tooltip: 'View questions',
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
+                                      onPressed: () => _deleteTheme(theme),
+                                      tooltip: 'Delete theme',
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         ],

@@ -42,7 +42,7 @@ class LoadingOverlay extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              message ?? 'Loading...',
+              message ?? 'Please wait...',
               style: const TextStyle(
                 color: Colors.white70,
                 fontSize: 14,

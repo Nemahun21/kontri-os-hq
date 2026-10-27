@@ -215,6 +215,9 @@ Future<void> _pickCsv() async {
       id: '',
       dailyChallengeId: widget.dailyChallengeId ??
           DailyChallengeService.activeDailyChallengeId,
+          category: (row['category']?.isNotEmpty ?? false)
+        ? row['category']!
+        :_defaultCategory(),
       question: row['question'] ?? '',
       options: _splitOptions(row['options'] ?? ''),
       correctAnswerIndex: _parseInt(row['correct_answer_index'], 0),
@@ -228,6 +231,17 @@ Future<void> _pickCsv() async {
       trimEnd: 0.0,
     );
   }
+
+  String _defaultCategory() {
+  switch (widget.mode) {
+    case CsvImportMode.daily:
+      return 'Daily Challenge';
+    case CsvImportMode.language:
+      return widget.languageId ?? 'Languages';
+    case CsvImportMode.adventure:
+      return widget.category ?? 'General';
+  }
+}
 
   LanguageQuestion _buildLanguageQuestion(
     Map<String, String> row,

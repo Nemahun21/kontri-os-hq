@@ -22,9 +22,10 @@ class DailyChallengeManagementScreen extends StatelessWidget {
           accentColor: Colors.orange,
           cacheKey: 'daily_challenge',
           pendingIds: pendingIds,
-          
+          isDailyChallenge: true,
+
           columnLabels: const [
-            'Position',
+            'POS',
             'Difficulty',
             'Type',
             'Question',
@@ -52,10 +53,12 @@ class DailyChallengeManagementScreen extends StatelessWidget {
               );
               position = existing.position;
             } else {
-              final maxPos = all.isEmpty
-                  ? 0
-                  : all.map((e) => e.position).reduce((a, b) => a > b ? a : b);
-              position = maxPos + 1;
+              final used = all.map((e) => e.position).toSet();
+              int nextPos = 1;
+              while (used.contains(nextPos)) {
+                nextPos++;
+              }
+              position = nextPos;
             }
             final dq = DailyChallengeQuestion.fromQuestion(
               q,

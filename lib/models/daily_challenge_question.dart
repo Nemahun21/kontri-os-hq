@@ -14,6 +14,8 @@ class DailyChallengeQuestion {
   final int position;
   final double? trimStart;
   final double? trimEnd;
+  final String category;
+
 
   DailyChallengeQuestion({
     required this.id,
@@ -29,6 +31,7 @@ class DailyChallengeQuestion {
     required this.position,
     this.trimStart,
     this.trimEnd,
+    this.category = 'Daily Challenge',
   });
 
   factory DailyChallengeQuestion.fromSupabase(Map<String, dynamic> json) {

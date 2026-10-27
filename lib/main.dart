@@ -39,7 +39,7 @@ class MyApp extends StatelessWidget {
     }
 
     return MaterialApp(
-      title: 'Kontri OS HQ',
+      title: 'Kontri OS Admin',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,

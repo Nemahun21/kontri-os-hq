@@ -110,7 +110,8 @@ class LanguageQuestion {
       points: points,
       difficulty: Difficulty.medium, // default, not used
       imageUrls: imageUrls,
-      typeData: mergedTypeData,
+      level: position,
+      typeData: typeData,
     );
   }
 

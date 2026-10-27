@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:csv/csv.dart';
-import 'package:excel/excel.dart' as xls;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -37,22 +36,26 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
     _loadBasePosition();
   }
 
-  Future<void> _loadBasePosition() async {
-    try {
-      final items = await _service.getAll(widget.contentType);
-      if (items.isEmpty) {
-        _basePosition = 1;
-      } else {
-        final maxPos = items
-            .map((e) => (e['position'] as int?) ?? 0)
-            .reduce((a, b) => a > b ? a : b);
-        _basePosition = maxPos + 1;
-      }
-    } catch (_) {
+ Future<void> _loadBasePosition() async {
+  try {
+    final items = await _service.getAll(widget.contentType);
+    if (items.isEmpty) {
       _basePosition = 1;
+      print('📌 _basePosition = 1 (table empty)');
+      return;
     }
-  }
 
+    final maxPos = items
+        .map((e) => (e['position'] as num?)?.toInt() ?? 0)
+        .fold<int>(0, (a, b) => a > b ? a : b);
+
+    _basePosition = maxPos + 1;
+    print('📌 _basePosition = $_basePosition (max=$maxPos, rows=${items.length})');
+  } catch (e) {
+    print('⚠️ Could not load base position: $e');
+    _basePosition = 1;
+  }
+}
   // ---------- Pick + parse ----------
 
  Future<void> _pickCsv() async {
@@ -63,15 +66,15 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
     _addedCount = 0;
   });
 
+  await _loadBasePosition();
+
   try {
     const typeGroup = XTypeGroup(
-      label: 'Spreadsheets',
-      extensions: ['csv', 'xlsx', 'xls'],
+      label: 'CSV',
+      extensions: ['csv'],
       mimeTypes: [
         'text/csv',
         'text/comma-separated-values',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
         'application/octet-stream',
       ],
     );
@@ -83,33 +86,19 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
     final bytes = await picked.readAsBytes();
 
     final ext = path.extension(name).toLowerCase();
-    if (ext != '.csv' && ext != '.xlsx' && ext != '.xls') {
-      _snack('Please pick a CSV or Excel file.');
+    if (ext != '.csv') {
+      _snack('Please pick a CSV file. If you have an Excel file, '
+          'open it in Excel and use File → Save As → CSV UTF-8.');
       return;
     }
 
-    List<List<dynamic>> parsed;
-
-    if (ext == '.xlsx' || ext == '.xls') {
-      final book = xls.Excel.decodeBytes(bytes);
-      if (book.tables.isEmpty) {
-        _snack('Excel file has no sheets.');
-        return;
-      }
-      final sheet = book.tables[book.tables.keys.first]!;
-      parsed = sheet.rows
-          .map((row) => row
-              .map((cell) => cell?.value?.toString() ?? '')
-              .toList())
-          .toList();
-    } else {
-      var content = utf8.decode(bytes, allowMalformed: true);
-      content = content.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-      if (content.startsWith('\uFEFF')) {
-        content = content.substring(1);
-      }
-      parsed = csv.decode(content);
+    var content = utf8.decode(bytes, allowMalformed: true);
+    content = content.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    if (content.startsWith('\uFEFF')) {
+      content = content.substring(1);
     }
+
+    List<List<dynamic>> parsed = csv.decode(content);
 
     if (parsed.isEmpty) {
       _snack('File is empty.');
@@ -160,14 +149,14 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
     if (mounted) setState(() => _isParsing = false);
   }
 }
- 
+  
   Map<String, dynamic> _buildData(Map<String, String> row, int index) {
     final data = <String, dynamic>{};
 
-    // Position — use CSV value if present, otherwise base + index
-    final parsedPos = int.tryParse(row['position'] ?? '');
-    data['position'] = parsedPos ?? (_basePosition + index);
-
+    final parsedPos = int.tryParse((row['position'] ?? '').trim());
+    final hasExplicit = parsedPos != null && parsedPos > 0;
+    data['position'] = hasExplicit ? parsedPos : (_basePosition + index);
+    
     // Image URL
     final img = (row['image_url'] ?? '').trim();
     if (img.isNotEmpty) data['image_url'] = img;
@@ -181,7 +170,7 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
 
       case ContentType.funFact:
         data['text'] = (row['text'] ?? row['fact'] ?? '').trim();
-        data['category'] = (row['category'] ?? '').trim();
+        data['detail'] = (row['detail'] ?? '').trim();
         break;
 
       case ContentType.challenge:
@@ -224,6 +213,7 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
 
     try {
       await _saveRow(row, index);
+      _basePosition++;
       if (!mounted) return;
       setState(() {
         _rows.removeAt(index);
@@ -241,13 +231,12 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
 
     final remaining = List<Map<String, String>>.from(_rows);
     var added = 0;
-    var index = 0;
 
     for (final row in remaining) {
       try {
-        await _saveRow(row, index);
+        await _saveRow(row, 0);
+        _basePosition++;
         added++;
-        index++;
         if (!mounted) return;
         setState(() {
           _rows.remove(row);
@@ -277,7 +266,7 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
       case ContentType.proverb:
         return 'Proverbs';
       case ContentType.funFact:
-        return 'Fun Facts';
+        return 'Interesting Factss';
       case ContentType.challenge:
         return 'Challenge Questions';
     }

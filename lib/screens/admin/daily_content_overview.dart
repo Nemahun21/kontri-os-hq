@@ -11,7 +11,7 @@ class DailyContentOverview extends StatelessWidget {
     final items = [
       _DailyItem(
         title: 'Daily Challenge',
-        subtitle: 'Quiz questions',
+        subtitle: 'Questions',
         icon: Icons.quiz_outlined,
         color: Colors.orange,
         onTap: () => Navigator.push(
@@ -36,7 +36,7 @@ class DailyContentOverview extends StatelessWidget {
         ),
       ),
       _DailyItem(
-        title: 'Fun Facts',
+        title: 'Interesting Facts',
         subtitle: 'Interesting cultural facts',
         icon: Icons.lightbulb_outline,
         color: Colors.purple,

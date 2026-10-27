@@ -50,10 +50,12 @@ Future<void> _handleLogin() async {
         password: password,
       );
       final user = authResponse.user;
-   //print('✅ User: ${user?.email} (ID: ${user?.id})');
+   print('✅ User: ${user?.email} (ID: ${user?.id})');
 
       
     } catch (authError) {
+            print(authError);
+
       // Handle authentication errors (wrong email/password, etc.)
       throw Exception('Invalid email or password');
     }

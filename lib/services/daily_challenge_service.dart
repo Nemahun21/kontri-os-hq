@@ -7,43 +7,47 @@ class DailyChallengeService {
   final supabase = Supabase.instance.client;
   final _cache = CacheService();
   static const String activeDailyChallengeId = 'active';
+Future<int> getNextPosition() async {
+  // Always return the first unused position for this challenge.
+  // Works the same online and offline so the caller doesn't need to know.
+  final online = await ConnectivityHelper.isOnline();
 
-  Future<int> getMaxPosition() async {
-    // This is a helper; not heavily used, but we can attempt online and fallback.
-    final online = await ConnectivityHelper.isOnline();
-    if (online) {
-      try {
-        final response = await supabase
-            .from('daily_challenge_questions')
-            .select('position')
-            .eq('daily_challenge_id', activeDailyChallengeId)
-            .order('position', ascending: false)
-            .limit(1);
-        if (response.isEmpty) return 0;
-        return response.first['position'] as int;
-      } catch (_) {
-        // fallback: get cached list and compute max
-        final cached = await _cache.getList<DailyChallengeQuestion>(
-          'daily_challenge_list',
-          DailyChallengeQuestion.fromSupabase,
-        );
-        if (cached.isNotEmpty) {
-          return cached.map((q) => q.position).reduce((a, b) => a > b ? a : b) + 1;
-        }
-        return 0;
+  Set<int> used = <int>{};
+
+  if (online) {
+    try {
+      final response = await supabase
+          .from('daily_challenge_questions')
+          .select('position')
+          .eq('daily_challenge_id', activeDailyChallengeId)
+          .order('position', ascending: true);
+
+      for (final row in response) {
+        final p = (row['position'] as num?)?.toInt();
+        if (p != null) used.add(p);
       }
-    } else {
+    } catch (_) {
       final cached = await _cache.getList<DailyChallengeQuestion>(
         'daily_challenge_list',
         DailyChallengeQuestion.fromSupabase,
       );
-      if (cached.isNotEmpty) {
-        return cached.map((q) => q.position).reduce((a, b) => a > b ? a : b) + 1;
-      }
-      return 0;
+      used = cached.map((q) => q.position).toSet();
     }
+  } else {
+    final cached = await _cache.getList<DailyChallengeQuestion>(
+      'daily_challenge_list',
+      DailyChallengeQuestion.fromSupabase,
+    );
+    used = cached.map((q) => q.position).toSet();
   }
 
+  // First free slot starting at 1.
+  int next = 1;
+  while (used.contains(next)) {
+    next++;
+  }
+  return next;
+}
   Future<List<DailyChallengeQuestion>> getDailyChallengeQuestions() async {
     const cacheKey = 'daily_challenge_list';
     final online = await ConnectivityHelper.isOnline();
@@ -54,7 +58,7 @@ class DailyChallengeService {
             .from('daily_challenge_questions')
             .select()
             .eq('daily_challenge_id', activeDailyChallengeId)
-            .order('position');
+           .order('position');
         final questions = (response as List)
             .map((json) => DailyChallengeQuestion.fromSupabase(json))
             .toList();

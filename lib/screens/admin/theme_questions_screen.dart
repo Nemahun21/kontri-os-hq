@@ -36,6 +36,7 @@ class ThemeQuestionsScreen extends StatelessWidget {
           initialCategory: 'Languages', // 👈
           initialLanguageId: languageId, // 👈
           initialThemeId: themeId,
+          languageMode: true,
           fetchQuestions: () async {
             final langQuestions = await service.getQuestionsForTheme(themeId);
             return langQuestions.map((lq) => lq.toQuestion()).toList();

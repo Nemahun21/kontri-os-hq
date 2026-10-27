@@ -19,6 +19,10 @@ class QuestionTable extends StatefulWidget {
   final String? initialCategory;
   final String? initialLanguageId;
   final String? initialThemeId;
+  final bool languageMode;
+  final Widget? headerWidget; // ← add this
+    final bool isDailyChallenge;
+
 
   const QuestionTable({
     super.key,
@@ -33,6 +37,9 @@ class QuestionTable extends StatefulWidget {
     this.initialCategory,
     this.initialLanguageId, // 👈
     this.initialThemeId,
+    this.languageMode = false,
+    this.headerWidget,
+    this.isDailyChallenge = false,
   });
 
   @override
@@ -107,9 +114,9 @@ class _QuestionTableState extends State<QuestionTable> {
         MaterialPageRoute(
           builder: (_) => AddEditQuestionScreen(
             question: existing,
-            initialCategory: existing?.category,
-             initialLanguageId: widget.initialLanguageId,  // 👈
-          initialThemeId: widget.initialThemeId, 
+            initialCategory: widget.languageMode ? 'Languages' : existing?.category,
+            initialLanguageId: widget.initialLanguageId,
+            initialThemeId: widget.initialThemeId,
           ),
         ),
       ).then((_) => _loadQuestions());
@@ -123,8 +130,11 @@ class _QuestionTableState extends State<QuestionTable> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _SimpleQuestionDialog(
-        category: existing?.category ?? '',
+        category: existing?.category ?? widget.initialCategory ?? '',
         existing: existing,
+        languageMode: widget.languageMode,
+        languageId: widget.initialLanguageId,
+        themeId: widget.initialThemeId,
       ),
     );
     if (result != null) {
@@ -170,6 +180,7 @@ class _QuestionTableState extends State<QuestionTable> {
           initialCategory: widget.initialCategory,
           initialLanguageId: widget.initialLanguageId, // 👈 pass through
           initialThemeId: widget.initialThemeId,
+          isDailyChallenge: widget.isDailyChallenge,
         ),
       ),
     ).then((_) => _loadQuestions());
@@ -240,37 +251,82 @@ class _QuestionTableState extends State<QuestionTable> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _questions.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.quiz_outlined, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    _isOffline
-                        ? 'No cached data. Connect to network to load.'
-                        : 'No questions yet.',
-                  ),
-                ],
-              ),
-            )
-          : SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    children: [
-                      _buildHeaderRow(),
-                      ..._questions.map((q) => _buildDataRow(q)),
-                    ],
-                  ),
+          : Column(
+              children: [
+                if (widget.headerWidget != null) widget.headerWidget!,
+                Expanded(
+                  child: _questions.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.quiz_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _isOffline
+                                    ? 'No cached data. Connect to network to load.'
+                                    : 'No questions yet.',
+                              ),
+                            ],
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.vertical,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                children: [
+                                  _buildHeaderRow(),
+                                  ..._questions.map((q) => _buildDataRow(q)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
-              ),
+              ],
             ),
     );
+  }
+
+  String _languageOptionsText(Question q) {
+    if (q.type == QuestionType.textInput) return '—';
+    if (q.type == QuestionType.fillBlank) {
+      final items = (q.typeData?['wordBank'] as List?) ?? const [];
+      return items
+          .map((item) => (item as Map?)?['text']?.toString() ?? '')
+          .where((text) => text.isNotEmpty)
+          .join(', ');
+    }
+    return q.options.join(', ');
+  }
+
+  String _languageCorrectText(Question q) {
+    if (q.type == QuestionType.textInput) return '—';
+    if (q.type == QuestionType.fillBlank) {
+      final correctIds = (q.typeData?['correctAnswers'] as Map?)?.values
+          .map((value) => value.toString())
+          .toSet();
+      final items = (q.typeData?['wordBank'] as List?) ?? const [];
+      for (final item in items) {
+        final map = item as Map?;
+        final id = map?['id']?.toString();
+        final text = map?['text']?.toString();
+        if (id != null && correctIds != null && correctIds.contains(id)) {
+          return text ?? '—';
+        }
+      }
+      return '—';
+    }
+    return (0 <= q.correctAnswerIndex && q.correctAnswerIndex < q.options.length)
+        ? q.options[q.correctAnswerIndex]
+        : '—';
   }
 
   Widget _buildHeaderRow() {
@@ -290,107 +346,131 @@ class _QuestionTableState extends State<QuestionTable> {
           'Points',
           'Actions',
         ];
+    final rowChildren = widget.languageMode
+        ? [
+            _headerCell('Position', 70),
+            _headerCell('Type', 110),
+            _headerCell('Question', 230),
+            _headerCell('Options', 230),
+            _headerCell('Correct Option', 120),
+            _headerCell('Hint/Explanation', 220),
+            _headerCell('Points', 60),
+            _headerCell('Actions', 100),
+          ]
+        : [
+            _headerCell(labels[0], 50),
+            _headerCell(labels[1], 90),
+            _headerCell(labels[2], 100),
+            _headerCell(labels[3], 130),
+            _headerCell(labels[4], 130),
+            _headerCell(labels[5], 70),
+            _headerCell(labels[6], 120),
+            _headerCell(labels[7], 120),
+            _headerCell(labels[8], 110),
+            _headerCell(labels[9], 120),
+            _headerCell(labels[10], 60),
+            _headerCell(labels[11], 100),
+          ];
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
         color: widget.accentColor.withOpacity(0.1),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 50,
-            child: Text(
-              labels[0],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 90,
-            child: Text(
-              labels[1],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 100,
-            child: Text(
-              labels[2],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 130,
-            child: Text(
-              labels[3],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 130,
-            child: Text(
-              labels[4],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 70,
-            child: Text(
-              labels[5],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 120,
-            child: Text(
-              labels[6],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          // ---- new columns ----
-          SizedBox(
-            width: 120,
-            child: Text(
-              labels[7],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 110,
-            child: Text(
-              labels[8],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 120,
-            child: Text(
-              labels[9],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          // ----
-          SizedBox(
-            width: 60,
-            child: Text(
-              labels[10],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          SizedBox(
-            width: 100,
-            child: Text(
-              labels[11],
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
+      child: Row(children: rowChildren),
+    );
+  }
+
+  Widget _headerCell(String label, double width) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold),
       ),
     );
   }
 
   Widget _buildDataRow(Question q) {
     final hasPending = widget.pendingIds?.contains(q.id) ?? false;
+    if (widget.languageMode) {
+      return GestureDetector(
+        onTap: () => _openEditor(existing: q),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+          ),
+          child: Row(
+            children: [
+              SizedBox(width: 70, child: Text(q.level?.toString() ?? '—')),
+              SizedBox(width: 110, child: Text(q.type.displayName)),
+              SizedBox(
+                width: 230,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        q.question,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (hasPending) ...[
+                      const SizedBox(width: 4),
+                      Icon(Icons.sync, size: 16, color: Colors.orange),
+                    ],
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: 230,
+                child: Text(
+                  _languageOptionsText(q),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(
+                width: 120,
+                child: Text(
+                  _languageCorrectText(q),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(
+                width: 220,
+                child: Text(
+                  q.explanation,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(width: 60, child: Text('${q.points}')),
+              SizedBox(
+                width: 100,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                      onPressed: () => _openEditor(existing: q),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                      onPressed: () => _deleteQuestion(q.id),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return GestureDetector(
       onTap: () => _openEditor(existing: q),
       behavior: HitTestBehavior.opaque,
@@ -433,7 +513,9 @@ class _QuestionTableState extends State<QuestionTable> {
             SizedBox(
               width: 70,
               child: Text(
-                q.options.isNotEmpty ? q.options[q.correctAnswerIndex] : '—',
+                (0 <= q.correctAnswerIndex && q.correctAnswerIndex < q.options.length)
+                    ? q.options[q.correctAnswerIndex]
+                    : '—',
               ),
             ),
             SizedBox(
@@ -444,7 +526,6 @@ class _QuestionTableState extends State<QuestionTable> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // ---- new columns ----
             SizedBox(
               width: 120,
               child: Text(
@@ -469,7 +550,6 @@ class _QuestionTableState extends State<QuestionTable> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // ----
             SizedBox(width: 60, child: Text('${q.points}')),
             SizedBox(
               width: 100,
@@ -498,7 +578,16 @@ class _QuestionTableState extends State<QuestionTable> {
 class _SimpleQuestionDialog extends StatefulWidget {
   final String category;
   final Question? existing;
-  const _SimpleQuestionDialog({required this.category, this.existing});
+  final bool languageMode;
+  final String? languageId;
+  final String? themeId;
+  const _SimpleQuestionDialog({
+    required this.category,
+    this.existing,
+    this.languageMode = false,
+    this.languageId,
+    this.themeId,
+  });
 
   @override
   State<_SimpleQuestionDialog> createState() => _SimpleQuestionDialogState();
@@ -620,21 +709,23 @@ class _SimpleQuestionDialogState extends State<_SimpleQuestionDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextFormField(
-                controller: _levelController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Level'),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<Difficulty>(
-                value: _selectedDifficulty,
-                items: Difficulty.values.map((d) {
-                  return DropdownMenuItem(value: d, child: Text(d.name));
-                }).toList(),
-                onChanged: (val) => setState(() => _selectedDifficulty = val!),
-                decoration: const InputDecoration(labelText: 'Difficulty'),
-              ),
-              const SizedBox(height: 8),
+              if (!widget.languageMode) ...[
+                TextFormField(
+                  controller: _levelController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Level'),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<Difficulty>(
+                  value: _selectedDifficulty,
+                  items: Difficulty.values.map((d) {
+                    return DropdownMenuItem(value: d, child: Text(d.name));
+                  }).toList(),
+                  onChanged: (val) => setState(() => _selectedDifficulty = val!),
+                  decoration: const InputDecoration(labelText: 'Difficulty'),
+                ),
+                const SizedBox(height: 8),
+              ],
               DropdownButtonFormField<QuestionType>(
                 value: _selectedType,
                 items:
@@ -684,9 +775,10 @@ class _SimpleQuestionDialogState extends State<_SimpleQuestionDialog> {
                   items: _optionsList.asMap().entries.map((entry) {
                     return DropdownMenuItem(
                       value: entry.key,
-                      child: Text('${entry.key + 1}: ${entry.value}',
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+                      child: Text(
+                        '${entry.key + 1}: ${entry.value}',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     );
                   }).toList(),
@@ -713,30 +805,32 @@ class _SimpleQuestionDialogState extends State<_SimpleQuestionDialog> {
                   labelText: 'Explanation / Hint',
                 ),
               ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _scenarioController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Scenario (optional)',
+              if (!widget.languageMode) ...[
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _scenarioController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Scenario (optional)',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _wrongConsequenceController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Wrong Consequence (optional)',
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _wrongConsequenceController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Wrong Consequence (optional)',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _culturalContextController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Cultural Context (optional)',
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _culturalContextController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Cultural Context (optional)',
+                  ),
                 ),
-              ),
+              ],
               TextFormField(
                 controller: _pointsController,
                 keyboardType: TextInputType.number,
@@ -761,6 +855,8 @@ class _SimpleQuestionDialogState extends State<_SimpleQuestionDialog> {
                   builder: (_) => AddEditQuestionScreen(
                     question: widget.existing,
                     initialCategory: widget.category,
+                    initialLanguageId: widget.languageId,
+                    initialThemeId: widget.themeId,
                   ),
                 ),
               );

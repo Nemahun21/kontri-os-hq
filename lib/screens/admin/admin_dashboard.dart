@@ -318,7 +318,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       body: RefreshIndicator(
         onRefresh: _refreshDashboard,
         child: _isLoading
-            ? const LoadingOverlay(message: 'Loading...')
+            ? const LoadingOverlay(message: 'Please wait...')
             : SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(bottom: 20),

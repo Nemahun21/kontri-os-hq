@@ -108,8 +108,8 @@ class _DailyContentManagementScreenState
     final sourceController = TextEditingController(
       text: (item?['source'] ?? '').toString(),
     );
-    final categoryController = TextEditingController(
-      text: (item?['category'] ?? '').toString(),
+    final detailController  = TextEditingController(
+      text: (item?['detail'] ?? '').toString(),
     );
     final optionsController = TextEditingController(
       text: (item?['options'] as List?)?.join('\n') ?? '',
@@ -128,12 +128,13 @@ class _DailyContentManagementScreenState
     String? _existingImageUrl = item?['image_url'] as String?;
     final picker = ImagePicker();
 
-    Future<void> _pickImage() async {
+    Future<void> _pickImage(StateSetter setDialogState) async {
       final XFile? picked = await picker.pickImage(source: ImageSource.gallery);
-      if (picked != null) {
+      if (picked == null) return;
+      setDialogState(() {
         _selectedImage = File(picked.path);
         _existingImageUrl = null;
-      }
+      });
     }
 
     final result = await showDialog<bool>(
@@ -155,8 +156,8 @@ class _DailyContentManagementScreenState
                       labelText: isProverb
                           ? 'Proverb'
                           : isFunFact
-                              ? 'Fact'
-                              : 'Question',
+                          ? 'Fact'
+                          : 'Question',
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -186,9 +187,9 @@ class _DailyContentManagementScreenState
                   // FunFact fields
                   if (isFunFact) ...[
                     TextFormField(
-                      controller: categoryController,
+                      controller: detailController,
                       decoration: const InputDecoration(
-                        labelText: 'Category',
+                        labelText: "Detail(under 'Read More')",
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -251,20 +252,25 @@ class _DailyContentManagementScreenState
                                   fit: BoxFit.cover,
                                 )
                               : _existingImageUrl != null
-                                  ? DecorationImage(
-                                      image: NetworkImage(_existingImageUrl!),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
+                              ? DecorationImage(
+                                  image: NetworkImage(_existingImageUrl!),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
                         ),
-                        child: _selectedImage == null && _existingImageUrl == null
-                            ? const Icon(Icons.image, size: 32, color: Colors.grey)
+                        child:
+                            _selectedImage == null && _existingImageUrl == null
+                            ? const Icon(
+                                Icons.image,
+                                size: 32,
+                                color: Colors.grey,
+                              )
                             : null,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _pickImage,
+                          onPressed: () => _pickImage(setState),
                           icon: const Icon(Icons.photo_library),
                           label: Text(
                             _selectedImage != null
@@ -280,8 +286,10 @@ class _DailyContentManagementScreenState
                   if (isEdit)
                     Row(
                       children: [
-                        const Text('Position: ',
-                            style: TextStyle(fontWeight: FontWeight.w500)),
+                        const Text(
+                          'Position: ',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
                         Text('${item!['position'] ?? 0}'),
                       ],
                     ),
@@ -326,7 +334,7 @@ class _DailyContentManagementScreenState
                     data['meaning'] = meaningController.text.trim();
                     data['source'] = sourceController.text.trim();
                   } else if (isFunFact) {
-                    data['category'] = categoryController.text.trim();
+                    data['detail'] = detailController.text.trim();
                   } else if (isChallenge) {
                     data['options'] = optionsController.text
                         .split('\n')
@@ -447,7 +455,7 @@ class _DailyContentManagementScreenState
       case ContentType.proverb:
         return 'Proverb';
       case ContentType.funFact:
-        return 'Fun Fact';
+        return 'Interesting Facts';
       case ContentType.challenge:
         return 'Challenge';
     }
@@ -488,20 +496,19 @@ class _DailyContentManagementScreenState
         elevation: 0,
         actions: [
           IconButton(
-      icon: const Icon(Icons.upload_file),
-      tooltip: 'Import CSV',
-      onPressed: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DailyContentCsvImporter(
-              contentType: widget.contentType,
-            ),
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Import CSV',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      DailyContentCsvImporter(contentType: widget.contentType),
+                ),
+              );
+              _loadData();
+            },
           ),
-        );
-        _loadData();
-      },
-    ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -516,99 +523,104 @@ class _DailyContentManagementScreenState
       body: _isLoading
           ? const LoadingOverlay()
           : _items.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(_getIcon(), size: 64, color: Colors.grey[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No ${_contentTypeLabel().toLowerCase()}s yet.',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 16),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Tap + to add your first one.',
-                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(_getIcon(), size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No ${_contentTypeLabel().toLowerCase()}s yet.',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 16),
                   ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Card(
-                    margin: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Header
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
-                          color: accent.withOpacity(0.1),
-                          child: Row(
-                            children: [
-                              Icon(_getIcon(), color: accent, size: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                _contentTypeLabel(),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: accent,
-                                ),
-                              ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: accent,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '${_items.length}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Column headers
-                        _buildHeaderRow(),
-                        // Data rows
-                        ..._items.asMap().entries.map((entry) {
-                          return _buildDataRow(entry.key, entry.value);
-                        }),
-                      ],
-                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap + to add your first one.',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
                   ),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Card(
+                margin: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      color: accent.withOpacity(0.1),
+                      child: Row(
+                        children: [
+                          Icon(_getIcon(), color: accent, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            _contentTypeLabel(),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: accent,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accent,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_items.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Column headers
+                    _buildHeaderRow(),
+                    // Data rows
+                    ..._items.asMap().entries.map((entry) {
+                      return _buildDataRow(entry.key, entry.value);
+                    }),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 
   List<String> _getHeaders() {
     switch (widget.contentType) {
       case ContentType.proverb:
-        return [ 'Proverb', 'Meaning', 'Source', 'Pos', 'Actions'];
+        return ['Proverb', 'Meaning', 'Source', 'Pos', 'Actions'];
       case ContentType.funFact:
-        return [ 'Fact', 'Category', 'Pos', 'Actions'];
+        return ['Fact', 'Detail', 'Pos', 'Actions'];
       case ContentType.challenge:
-        return [ 'Question', 'Options', 'Correct', 'Pts', 'Pos', 'Actions'];
+        return ['Question', 'Options', 'Correct', 'Pts', 'Pos', 'Actions'];
     }
   }
 
   List<int> _getFlexValues() {
     switch (widget.contentType) {
       case ContentType.proverb:
-        return [ 5, 4, 3, 1, 3];
+        return [5, 4, 3, 1, 3];
       case ContentType.funFact:
         return [5, 3, 1, 3];
       case ContentType.challenge:
@@ -652,74 +664,86 @@ class _DailyContentManagementScreenState
 
     // Text / Question
     final text = (item['text'] ?? item['question'] ?? '').toString();
-    cells.add(Row(
-      children: [
-        Expanded(
-          child: Text(
-            text.isEmpty ? '—' : text,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontStyle: isPending ? FontStyle.italic : FontStyle.normal,
-              color: isPending ? Colors.grey : null,
+    cells.add(
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              text.isEmpty ? '—' : text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontStyle: isPending ? FontStyle.italic : FontStyle.normal,
+                color: isPending ? Colors.grey : null,
+              ),
             ),
           ),
-        ),
-        if (isPending) ...[
-          const SizedBox(width: 4),
-          const Icon(Icons.sync, size: 14, color: Colors.orange),
+          if (isPending) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.sync, size: 14, color: Colors.orange),
+          ],
         ],
-      ],
-    ));
+      ),
+    );
 
     // Type-specific columns
     if (widget.contentType == ContentType.proverb) {
-      cells.add(Text(
-        (item['meaning'] ?? '—').toString(),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ));
-      cells.add(Text(
-        (item['source'] ?? '—').toString(),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ));
+      cells.add(
+        Text(
+          (item['meaning'] ?? '—').toString(),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
+      cells.add(
+        Text(
+          (item['source'] ?? '—').toString(),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
     } else if (widget.contentType == ContentType.funFact) {
-      cells.add(Text(
-        (item['category'] ?? '—').toString(),
-        style: const TextStyle(fontSize: 12),
-      ));
+      cells.add(
+        Text(
+          (item['detail'] ?? '—').toString(),
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
     } else if (widget.contentType == ContentType.challenge) {
       final options = (item['options'] as List?)?.join(', ') ?? '—';
-      cells.add(Text(
-        options,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ));
-      cells.add(Text(
-        '${item['correct_answer_index'] ?? 0}',
-        style: const TextStyle(fontSize: 12),
-      ));
-      cells.add(Text(
-        '${item['points'] ?? 0}',
-        style: const TextStyle(fontSize: 12),
-      ));
+      cells.add(
+        Text(
+          options,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
+      cells.add(
+        Text(
+          '${item['correct_answer_index'] ?? 0}',
+          style: const TextStyle(fontSize: 12),
+        ),
+      );
+      cells.add(
+        Text('${item['points'] ?? 0}', style: const TextStyle(fontSize: 12)),
+      );
     }
 
     // Position
-    cells.add(Text(
-      '${item['position'] ?? 0}',
-      style: const TextStyle(fontSize: 12),
-    ));
+    cells.add(
+      Text('${item['position'] ?? 0}', style: const TextStyle(fontSize: 12)),
+    );
 
-   cells.add(CompactActions(
-  onEdit: isPending ? null : () => _editItem(item),
-  onDelete: isPending ? null : () => _deleteItem(item),
-));
+    cells.add(
+      CompactActions(
+        onEdit: isPending ? null : () => _editItem(item),
+        onDelete: isPending ? null : () => _deleteItem(item),
+      ),
+    );
     return Container(
       decoration: BoxDecoration(
         color: index.isEven ? Colors.white : Colors.grey.shade50,
