@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:kohntri_os_hq/screens/splash_screen.dart';
+import 'package:kohntri_os_hq/utils/splash_screen.dart';
 import 'package:kohntri_os_hq/services/sync_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';

@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kohntri_os_hq/screens/admin/admin_dashboard.dart';
 import 'package:kohntri_os_hq/widgets/loading_overlay.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,12 +22,153 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   String? _errorMessage;
   bool _obscurePassword = true;
 
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  static const _webClientId =
+      '809978005987-8s4dji8d6agtm51iv4rd3a61t5riumb6.apps.googleusercontent.com';
+  static const _iosClientId = '';
+  bool _googleReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initGoogle();
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _keyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _initGoogle() async {
+    try {
+      await _googleSignIn.initialize(
+        clientId: defaultTargetPlatform == TargetPlatform.iOS
+            ? _iosClientId
+            : null,
+        serverClientId: _webClientId,
+      );
+      if (mounted) setState(() => _googleReady = true);
+    } catch (e) {
+      if (kDebugMode) print('❌ GoogleSignIn init failed: $e');
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      if (kIsWeb) {
+        await Supabase.instance.client.auth.signInWithOAuth(
+          OAuthProvider.google,
+          redirectTo: Uri.base.origin,
+        );
+      } else {
+        if (!_googleReady) {
+          await _initGoogle();
+          if (!_googleReady) {
+            if (mounted) {
+              setState(() => _errorMessage = 'Google sign-in not ready. Try again.');
+            }
+            return;
+          }
+        }
+
+        final account = await _googleSignIn.authenticate();
+        if (account == null) return;
+
+        final idToken = account.authentication.idToken;
+        if (idToken == null) throw Exception('No ID token received.');
+
+        await Supabase.instance.client.auth.signInWithIdToken(
+          provider: OAuthProvider.google,
+          idToken: idToken,
+        );
+      }
+
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) {
+        throw Exception('Google sign-in failed.');
+      }
+
+      final adminResponse = await Supabase.instance.client
+          .from('admins')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+      if (adminResponse == null) {
+        throw Exception('Not an authorized admin');
+      }
+
+      if (!mounted) return;
+
+      final assignedKey = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          final keyController = TextEditingController();
+          return AlertDialog(
+            title: const Text('Enter assigned key'),
+            content: TextField(
+              controller: keyController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: 'Assigned key',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await Supabase.instance.client.auth.signOut();
+                  if (!mounted) return;
+                  Navigator.of(dialogContext).pop(null);
+                },
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(keyController.text),
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (assignedKey == null) {
+        await Supabase.instance.client.auth.signOut();
+        return;
+      }
+
+      if (adminResponse['assigned_key'] != assignedKey) {
+        await Supabase.instance.client.auth.signOut();
+        throw Exception('Invalid assigned key');
+      }
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AdminDashboard(adminData: adminResponse),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
 Future<void> _handleLogin() async {
@@ -295,6 +438,42 @@ Widget _buildEmailItem(BuildContext context){
                     ),
                   ),
                 const SizedBox(height: 25),
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
+                  icon: const Text(
+                    'G',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4285F4),
+                    ),
+                  ),
+                  label: const Text('Continue with Google'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF2C3E50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    side: BorderSide(color: Colors.grey.shade300),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: Colors.grey.shade300)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'or',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: Colors.grey.shade300)),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 _buildEmailItem(context),
                 const SizedBox(height: 25),
                 _buildPasswordItem(context),
