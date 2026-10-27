@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:kohntri_os_hq/screens/admin/admin_metrics_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/content_bank_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/content_hub_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/daily_content_overview.dart';
@@ -164,6 +165,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await _loadCommandCentre();
   }
 
+  void _openMetrics(BuildContext context, String title, String metric) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminMetricsScreen(metric: metric, title: title),
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     try {
       await Supabase.instance.client.auth.signOut();
@@ -180,167 +190,71 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   // =====================================================
-  // ADMIN HEADER (unchanged)
+  // ADMIN HEADER
   // =====================================================
   Widget _buildAdminHeader(BuildContext context) {
     final adminData = _adminData;
     final name = adminData?['name'] ?? 'Admin';
     final email = adminData?['email'] ?? '';
-    final role = adminData?['role'] ?? '';
-    final description = adminData?['description'] ?? '';
-    final createdAt = adminData?['created_at'];
 
-    return Card(
-      margin: const EdgeInsets.all(16),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.blue.shade50, Colors.white],
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.admin_panel_settings,
-                    size: 28,
-                    color: Colors.blue,
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Admin Dashboard',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const Spacer(),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: IconButton(
-                      onPressed: _logout,
-                      icon: const Icon(Icons.logout),
-                      tooltip: 'Logout',
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.grey.shade100,
-                        foregroundColor: Colors.redAccent,
-                      ),
-                    ),
-                  ),
-                ],
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.blue.shade100,
+            child: Text(
+              name.isNotEmpty ? name[0].toUpperCase() : 'A',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor: Colors.blue.shade100,
-                    child: Text(
-                      name.isNotEmpty ? name[0].toUpperCase() : 'A',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          email,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              if (adminData != null) ...[
-                const Divider(),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 24,
-                  runSpacing: 16,
-                  children: [
-                    _buildInfoItem(Icons.badge, 'Role', role),
-                    _buildInfoItem(Icons.key, 'Assigned Key', '*****'),
-                    if (description.isNotEmpty)
-                      _buildInfoItem(
-                        Icons.description,
-                        'Description',
-                        description,
-                      ),
-                    if (createdAt != null)
-                      _buildInfoItem(
-                        Icons.calendar_today,
-                        'Created',
-                        _formatDate(createdAt),
-                      ),
-                  ],
-                ),
-              ] else
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('No admin data available'),
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  email,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout, size: 20, color: Colors.redAccent),
+            tooltip: 'Logout',
+          ),
+        ],
       ),
     );
-  }
-
-  Widget _buildInfoItem(IconData icon, String label, String value) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18, color: Colors.blue),
-        const SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
-        Text(value, style: const TextStyle(fontSize: 14)),
-      ],
-    );
-  }
-
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return 'N/A';
-    try {
-      final date = DateTime.parse(dateStr);
-      return '${date.month}-${date.day}-${date.year}';
-    } catch (e) {
-      return dateStr;
-    }
   }
 
   // =====================================================
@@ -366,7 +280,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     if (_stats != null)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: PulseStrip(stats: _stats!.pulse),
+                        child: PulseStrip(
+                          stats: _stats!.pulse,
+                          onDauTap: () => _openMetrics(context, 'Active Today', 'dau'),
+                          onNewTodayTap: () => _openMetrics(context, 'New Today', 'signups'),
+                          onAttemptsTap: () => _openMetrics(context, 'Attempts', 'attempts'),
+                          onTotalUsersTap: () => _openMetrics(context, 'Total Users', 'total_users'),
+                        ),
                       ),
                     if (_stats != null)
                       ActionNeededCard(

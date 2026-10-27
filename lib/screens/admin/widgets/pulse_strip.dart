@@ -4,8 +4,19 @@ import '../../../models/admin_stats.dart';
 
 class PulseStrip extends StatelessWidget {
   final AdminPulse stats;
+  final VoidCallback? onDauTap;
+  final VoidCallback? onNewTodayTap;
+  final VoidCallback? onAttemptsTap;
+  final VoidCallback? onTotalUsersTap;
 
-  const PulseStrip({super.key, required this.stats});
+  const PulseStrip({
+    super.key,
+    required this.stats,
+    this.onDauTap,
+    this.onNewTodayTap,
+    this.onAttemptsTap,
+    this.onTotalUsersTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -14,21 +25,25 @@ class PulseStrip extends StatelessWidget {
         value: stats.dau.toString(),
         label: 'Active Today',
         color: Colors.green,
+        onTap: onDauTap,
       ),
       _StatTile(
         value: stats.newToday.toString(),
         label: 'New Today',
         color: Colors.blue,
+        onTap: onNewTodayTap,
       ),
       _StatTile(
         value: stats.attemptsToday.toString(),
         label: 'Attempts Today',
         color: Colors.orange,
+        onTap: onAttemptsTap,
       ),
       _StatTile(
         value: stats.totalUsers.toString(),
         label: 'Total Users',
         color: Colors.grey,
+        onTap: onTotalUsersTap,
       ),
     ];
 
@@ -53,16 +68,18 @@ class _StatTile extends StatelessWidget {
   final String value;
   final String label;
   final Color color;
+  final VoidCallback? onTap;
 
   const _StatTile({
     required this.value,
     required this.label,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final child = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -76,29 +93,50 @@ class _StatTile extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
         children: [
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+          Positioned(
+            right: 4,
+            top: 4,
+            child: onTap != null
+                ? const Icon(Icons.chevron_right, size: 14, color: Colors.grey)
+                : const SizedBox.shrink(),
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ],
       ),
+    );
+
+    if (onTap == null) {
+      return child;
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: child,
     );
   }
 }
