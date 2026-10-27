@@ -1,9 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/screens/admin/content_bank_screen.dart';
+import 'package:kohntri_os_hq/screens/admin/content_hub_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/daily_content_overview.dart';
+import 'package:kohntri_os_hq/screens/admin/widgets/action_needed_card.dart';
+import 'package:kohntri_os_hq/screens/admin/widgets/live_feed.dart';
+import 'package:kohntri_os_hq/screens/admin/widgets/pulse_strip.dart';
+import 'package:kohntri_os_hq/screens/admin/widgets/signin_categories_row.dart';
+import 'package:kohntri_os_hq/screens/admin/widgets/top_players_card.dart';
 import 'package:kohntri_os_hq/screens/auth/login_screen.dart';
 import 'package:kohntri_os_hq/screens/languages_management_screen.dart';
 import 'package:kohntri_os_hq/screens/quiz_category_selection_screen.dart';
+import 'package:kohntri_os_hq/services/admin_stats_service.dart';
 import 'package:kohntri_os_hq/services/cache_service.dart';
 import 'package:kohntri_os_hq/services/daily_challenge_service.dart';
 import 'package:kohntri_os_hq/services/language_question_service.dart';
@@ -11,6 +20,8 @@ import 'package:kohntri_os_hq/services/question_service.dart';
 import 'package:kohntri_os_hq/utils/connectivity_helper.dart';
 import 'package:kohntri_os_hq/widgets/loading_overlay.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../models/admin_stats.dart';
 
 class AdminDashboard extends StatefulWidget {
   final Map<String, dynamic>? adminData;
@@ -22,6 +33,8 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   Map<String, dynamic>? _adminData;
+  AdminStats? _stats;
+  Timer? _refreshTimer;
 
   final QuestionService _questionService = QuestionService();
   final LanguageQuestionService _langService = LanguageQuestionService();
@@ -42,6 +55,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _loadAdminData();
     }
     _loadStats();
+    _loadCommandCentre();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _loadCommandCentre(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadCommandCentre() async {
+    try {
+      final stats = await AdminStatsService.fetch();
+      if (!mounted) return;
+      setState(() => _stats = stats);
+    } catch (error) {
+      debugPrint('command centre load failed: $error');
+    }
   }
 
   Future<void> _loadAdminData() async {
@@ -127,6 +161,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Future<void> _refreshDashboard() async {
     await _loadStats();
+    await _loadCommandCentre();
   }
 
   Future<void> _logout() async {
@@ -317,7 +352,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       backgroundColor: const Color(0xFFF8F9FA),
       body: RefreshIndicator(
         onRefresh: _refreshDashboard,
-        child: _isLoading
+        child: _isLoading && _stats == null
             ? const LoadingOverlay(message: 'Please wait...')
             : SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -326,18 +361,48 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 10),
-
-                    // Admin info (unchanged)
                     _buildAdminHeader(context),
-
                     const SizedBox(height: 8),
-
-                    // Compact stats row
-                    _buildStatsRow(),
-
+                    if (_stats != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: PulseStrip(stats: _stats!.pulse),
+                      ),
+                    if (_stats != null)
+                      ActionNeededCard(
+                        queues: _stats!.queues,
+                        onReportsTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ContentHubScreen(initialTab: 2),
+                          ),
+                        ),
+                        onContribsTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ContentHubScreen(initialTab: 3),
+                          ),
+                        ),
+                      ),
+                    if (_stats != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: LiveFeed(events: _stats!.recent),
+                      ),
+                    if (_stats != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: SignInCategoriesRow(
+                          signIn: _stats!.signIn,
+                          categories: _stats!.categoriesToday,
+                        ),
+                      ),
+                    if (_stats != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: TopPlayersCard(players: _stats!.topPlayers),
+                      ),
                     const SizedBox(height: 24),
-
-                    // Perform actions title
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
@@ -350,10 +415,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                     ),
                     const SizedBox(height: 10),
-
-                    // Compact list of actions
-                    _buildPerformActions(),
-
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ContentHubScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.dashboard_customize),
+                        label: const Text('Open Content Hub'),
+                      ),
+                    ),
                     const SizedBox(height: 30),
                   ],
                 ),
@@ -361,250 +435,4 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
     );
   }
-
-  // =====================================================
-  // STATS ROW (compact 3-across)
-  // =====================================================
-  Widget _buildStatsRow() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: _statTile(
-              icon: Icons.quiz_outlined,
-              value: '$_totalQuestions',
-              label: 'Questions',
-              color: Colors.blue,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _statTile(
-              icon: Icons.category_outlined,
-              value: '${_categoryCounts.length}',
-              label: 'Categories',
-              color: Colors.orange,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _statTile(
-              icon: Icons.people_outline,
-              value: '$_totalUsers',
-              label: 'Users',
-              color: Colors.green,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statTile({
-    required IconData icon,
-    required String value,
-    required String label,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.15)),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // =====================================================
-  // PERFORM ACTIONS (compact list)
-  // =====================================================
-  Widget _buildPerformActions() {
-    final dailyChallengeCount = _categoryCounts['Daily Challenge'] ?? 0;
-    const quizSubs = ['History', 'Sports', 'Places', 'Food'];
-    final quizCount = quizSubs.fold<int>(
-      0,
-      (sum, cat) => sum + (_categoryCounts[cat] ?? 0),
-    );
-
-    final actions = [
-      _ActionItem(
-        title: 'Daily Content',
-        subtitle: '$dailyChallengeCount items • rotation',
-        icon: Icons.calendar_today_outlined,
-        color: Colors.orange,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DailyContentOverview()),
-        ),
-      ),
-      _ActionItem(
-        title: 'Quiz Category',
-        subtitle: '$quizCount questions • History / Sports / Places / Food',
-        icon: Icons.quiz_outlined,
-        color: Colors.green,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const QuizCategorySelectionScreen(
-                parentCategory: 'Quiz Category',
-                subCategories: ['History', 'Sports', 'Places', 'Food'],
-              ),
-            ),
-          );
-        },
-      ),
-      _ActionItem(
-        title: 'Languages',
-        subtitle: '$_totalLangQuestions questions',
-        icon: Icons.language_outlined,
-        color: Colors.red,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const LanguagesManagementScreen(),
-          ),
-        ),
-      ),
-      _ActionItem(
-        title: 'Question Bank',
-        subtitle: '$_totalQuestions total across all categories',
-        icon: Icons.list_alt_outlined,
-        color: Colors.blue,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ContentBankScreen()),
-        ),
-      ),
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: actions
-            .map((a) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _actionRow(a),
-                ))
-            .toList(),
-      ),
-    );
-  }
-
-  Widget _actionRow(_ActionItem action) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: action.color.withOpacity(0.15)),
-        boxShadow: [
-          BoxShadow(
-            color: action.color.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: action.onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: action.color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(action.icon, color: action.color, size: 22),
-              ),
-              const SizedBox(width: 14),
-
-              // Title + subtitle
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      action.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2C3E50),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      action.subtitle,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.grey[600],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-
-              // Chevron
-              Icon(Icons.chevron_right,
-                  color: Colors.grey[400], size: 22),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// =====================================================
-// Action item helper class
-// =====================================================
-class _ActionItem {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  _ActionItem({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
 }
