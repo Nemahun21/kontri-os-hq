@@ -17,7 +17,19 @@ void main() async {
 
   if (!kIsWeb) {
     await SyncService().syncPendingOperations();
+  } else {
+    // Handle OAuth callback on web
+    final code = Uri.base.queryParameters['code'];
+    if (code != null) {
+      try {
+        await Supabase.instance.client.auth.exchangeCodeForSession(code);
+      } catch (e) {
+        debugPrint('exchangeCodeForSession failed: $e');
+      }
+    }
   }
+   // Handle OAuth callback on web
+ 
 
   runApp(const MyApp());
 }

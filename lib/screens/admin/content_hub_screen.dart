@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'add_edit_question.dart';
 import 'content_bank_screen.dart';
-import 'widgets/quick_add_question_sheet.dart';
+import 'widgets/add_question_mode_sheet.dart';
 import '../languages_management_screen.dart';
 
 class ContentHubScreen extends StatefulWidget {
@@ -32,20 +33,46 @@ class _ContentHubScreenState extends State<ContentHubScreen>
     setState(() => _showFab = _tabController.index == 0);
   }
 
-  Future<void> _openQuickAddQuestionSheet() async {
-    final result = await showModalBottomSheet<bool>(
-      context: context,
+  Future<void> _openAddQuestion(BuildContext context) async {
+    final currentContext = context;
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: currentContext,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => const QuickAddQuestionSheet(),
+      builder: (_) => const AddQuestionModeSheet(),
     );
 
-    if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Question added')),
+    if (result == null || !currentContext.mounted) return;
+
+    final mode = result['mode'] as String?;
+    Widget screen;
+    if (mode == 'adventure') {
+      screen = AddEditQuestionScreen(
+        initialCategory: result['category'] as String?,
       );
+    } else if (mode == 'daily') {
+      screen = const AddEditQuestionScreen(isDailyChallenge: true);
+    } else if (mode == 'language') {
+      screen = AddEditQuestionScreen(
+        initialLanguageId: result['languageId'] as String?,
+        initialThemeId: result['themeId'] as String?,
+        languageName: result['languageName'] as String?,
+        themeName: result['themeName'] as String?,
+      );
+    } else {
+      return;
+    }
+
+    await Navigator.push(
+      currentContext,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+
+    if (!currentContext.mounted) return;
+    if (_tabController.index == 0) {
+      setState(() {});
     }
   }
 
@@ -85,7 +112,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
       ),
       floatingActionButton: _showFab
           ? FloatingActionButton(
-              onPressed: _openQuickAddQuestionSheet,
+              onPressed: () => _openAddQuestion(context),
               child: const Icon(Icons.add),
             )
           : null,
@@ -505,30 +532,15 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       orElse: () => <String, dynamic>{},
                     );
                     if (item.isEmpty) return;
-                    final q = await showModalBottomSheet<bool>(
-                      context: context,
-                      isScrollControlled: true,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                      ),
-                      builder: (ctx) => QuickAddQuestionSheet(
-                        initialQuestion: (item['title'] ?? item['content'] ?? '').toString(),
-                        initialCategory: 'History',
-                        initialDifficulty: 'medium',
-                        initialCorrectAnswer: 'A',
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddEditQuestionScreen(
+                          initialCategory: 'History',
+                        ),
                       ),
                     );
-                    if (q == true) {
-                      await Supabase.instance.client
-                          .from('content_submissions')
-                          .update({
-                            'status': 'accepted',
-                            'review_notes': 'Promoted to question',
-                            'reviewed_at': DateTime.now().toIso8601String(),
-                          })
-                          .eq('id', item['id']);
-                      await _loadSubmissions();
-                    }
+                    await _loadSubmissions();
                   },
                   child: const Text('Accept'),
                 ),

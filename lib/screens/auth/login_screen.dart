@@ -45,11 +45,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   Future<void> _initGoogle() async {
     try {
       await _googleSignIn.initialize(
-        clientId: defaultTargetPlatform == TargetPlatform.iOS
-            ? _iosClientId
-            : null,
-        serverClientId: _webClientId,
-      );
+  clientId: kIsWeb
+      ? _webClientId  // ← add this for web
+      : (defaultTargetPlatform == TargetPlatform.iOS ? _iosClientId : null),
+  serverClientId: _webClientId,
+);
       if (mounted) setState(() => _googleReady = true);
     } catch (e) {
       if (kDebugMode) print('❌ GoogleSignIn init failed: $e');
