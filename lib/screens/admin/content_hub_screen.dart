@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'add_edit_question.dart';
 import 'content_bank_screen.dart';
-import 'widgets/add_question_mode_sheet.dart';
+import 'widgets/quick_add_question_sheet.dart';
 import '../languages_management_screen.dart';
 
 class ContentHubScreen extends StatefulWidget {
@@ -23,7 +22,11 @@ class _ContentHubScreenState extends State<ContentHubScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTab,
+    );
     _tabController.addListener(_handleTabChange);
     _showFab = _tabController.index == 0;
   }
@@ -33,46 +36,20 @@ class _ContentHubScreenState extends State<ContentHubScreen>
     setState(() => _showFab = _tabController.index == 0);
   }
 
-  Future<void> _openAddQuestion(BuildContext context) async {
-    final currentContext = context;
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: currentContext,
+  Future<void> _openQuickAddQuestionSheet() async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => const AddQuestionModeSheet(),
+      builder: (context) => const QuickAddQuestionSheet(),
     );
 
-    if (result == null || !currentContext.mounted) return;
-
-    final mode = result['mode'] as String?;
-    Widget screen;
-    if (mode == 'adventure') {
-      screen = AddEditQuestionScreen(
-        initialCategory: result['category'] as String?,
-      );
-    } else if (mode == 'daily') {
-      screen = const AddEditQuestionScreen(isDailyChallenge: true);
-    } else if (mode == 'language') {
-      screen = AddEditQuestionScreen(
-        initialLanguageId: result['languageId'] as String?,
-        initialThemeId: result['themeId'] as String?,
-        languageName: result['languageName'] as String?,
-        themeName: result['themeName'] as String?,
-      );
-    } else {
-      return;
-    }
-
-    await Navigator.push(
-      currentContext,
-      MaterialPageRoute(builder: (_) => screen),
-    );
-
-    if (!currentContext.mounted) return;
-    if (_tabController.index == 0) {
-      setState(() {});
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Question added')));
     }
   }
 
@@ -112,7 +89,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
       ),
       floatingActionButton: _showFab
           ? FloatingActionButton(
-              onPressed: () => _openAddQuestion(context),
+              onPressed: _openQuickAddQuestionSheet,
               child: const Icon(Icons.add),
             )
           : null,
@@ -125,10 +102,7 @@ class _QuestionsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: const ContentBankScreen(),
-    );
+    return Container(color: Colors.white, child: const ContentBankScreen());
   }
 }
 
@@ -153,7 +127,7 @@ class _ReportsTab extends StatefulWidget {
 
 class _ReportsTabState extends State<_ReportsTab> {
   List<Map<String, dynamic>> _reports = [];
-  final Set<int> _selected = <int>{};
+  final Set<String> _selected = <String>{};
   bool _loading = true;
 
   Future<void> _loadReports() async {
@@ -161,7 +135,9 @@ class _ReportsTabState extends State<_ReportsTab> {
     try {
       final response = await Supabase.instance.client
           .from('content_reports')
-          .select('id, category, language, content_id, message, created_at, status, user_id, app_version, platform')
+          .select(
+            'id, category, language, content_id, message, created_at, status, user_id, app_version, platform',
+          )
           .eq('status', 'new')
           .order('created_at', ascending: false)
           .limit(100);
@@ -174,9 +150,9 @@ class _ReportsTabState extends State<_ReportsTab> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load reports: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load reports: $error')));
     }
   }
 
@@ -199,9 +175,9 @@ class _ReportsTabState extends State<_ReportsTab> {
       await _loadReports();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
   }
 
@@ -220,7 +196,10 @@ class _ReportsTabState extends State<_ReportsTab> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Reject'),
@@ -263,57 +242,63 @@ class _ReportsTabState extends State<_ReportsTab> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _reports.isEmpty
-                ? const Center(child: Text('No reports in the queue.'))
-                : ListView.builder(
-                    itemCount: _reports.length,
-                    itemBuilder: (context, index) {
-                      final item = _reports[index];
-                      final selected = _selected.contains(item['id']);
-                      return CheckboxListTile(
-                        value: selected,
-                        onChanged: (value) {
-                          setState(() {
-                            if (value == true) {
-                              _selected.add(item['id'] as int);
-                            } else {
-                              _selected.remove(item['id'] as int);
-                            }
-                          });
-                        },
-                        title: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                (item['category'] ?? 'General').toString(),
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                (item['message'] ?? '').toString(),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        subtitle: Text(
-                          '${item['user_id'] ?? 'unknown'} • ${_formatAge(item['created_at'])}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        secondary: TextButton(
-                          onPressed: () => _showReportDetails(item),
-                          child: const Text('View'),
-                        ),
-                      );
+            ? const Center(child: Text('No reports in the queue.'))
+            : ListView.builder(
+                itemCount: _reports.length,
+                itemBuilder: (context, index) {
+                  final item = _reports[index];
+                  final selected = _selected.contains(item['id']);
+                  return CheckboxListTile(
+                    value: selected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selected.add(item['id'].toString());
+                        } else {
+                          _selected.remove(item['id'].toString());
+                        }
+                      });
                     },
-                  ),
+                    title: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            (item['category'] ?? 'General').toString(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            (item['message'] ?? '').toString(),
+                            maxLines: 6,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      '${item['user_id'] ?? 'unknown'} • ${_formatAge(item['created_at'])}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    secondary: TextButton(
+                      onPressed: () => _showReportDetails(item),
+                      child: const Text('View'),
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
@@ -368,7 +353,8 @@ class _ReportsTabState extends State<_ReportsTab> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Close')),
+         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Mark fixed'),
@@ -387,7 +373,9 @@ class _ReportsTabState extends State<_ReportsTab> {
           .update({
             'status': 'fixed',
             'reviewed_at': DateTime.now().toIso8601String(),
-            'review_notes': controller.text.trim().isEmpty ? '(bulk)' : controller.text.trim(),
+            'review_notes': controller.text.trim().isEmpty
+                ? '(bulk)'
+                : controller.text.trim(),
           })
           .eq('id', item['id']);
       await _loadReports();
@@ -423,7 +411,9 @@ class _ContributionsTabState extends State<_ContributionsTab> {
     try {
       final response = await Supabase.instance.client
           .from('content_submissions')
-          .select('id, submission_type, area, title, content, contact_info, credited_name, created_at, status')
+          .select(
+            'id, submission_type, area, title, content, contact_info, credited_name, created_at, status',
+          )
           .eq('status', 'new')
           .order('created_at', ascending: false)
           .limit(100);
@@ -465,9 +455,9 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       await _loadSubmissions();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
   }
 
@@ -480,11 +470,20 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         content: TextField(
           controller: controller,
           maxLines: 3,
-          decoration: const InputDecoration(labelText: 'Review note', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Review note',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reject')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reject'),
+          ),
         ],
       ),
     );
@@ -503,11 +502,20 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         content: TextField(
           controller: controller,
           maxLines: 3,
-          decoration: const InputDecoration(labelText: 'Message to contributor', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Message to contributor',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -532,20 +540,44 @@ class _ContributionsTabState extends State<_ContributionsTab> {
                       orElse: () => <String, dynamic>{},
                     );
                     if (item.isEmpty) return;
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AddEditQuestionScreen(
-                          initialCategory: 'History',
+                    final q = await showModalBottomSheet<bool>(
+                      context: context,
+                      isScrollControlled: true,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
                         ),
                       ),
+                      builder: (ctx) => QuickAddQuestionSheet(
+                        initialQuestion:
+                            (item['title'] ?? item['content'] ?? '').toString(),
+                        initialCategory: 'History',
+                        initialDifficulty: 'medium',
+                        initialCorrectAnswer: 'A',
+                      ),
                     );
-                    await _loadSubmissions();
+                    if (q == true) {
+                      await Supabase.instance.client
+                          .from('content_submissions')
+                          .update({
+                            'status': 'accepted',
+                            'review_notes': 'Promoted to question',
+                            'reviewed_at': DateTime.now().toIso8601String(),
+                          })
+                          .eq('id', item['id']);
+                      await _loadSubmissions();
+                    }
                   },
                   child: const Text('Accept'),
                 ),
-                TextButton(onPressed: _rejectWithNote, child: const Text('Reject')),
-                TextButton(onPressed: _needsInfoWithNote, child: const Text('Needs info')),
+                TextButton(
+                  onPressed: _rejectWithNote,
+                  child: const Text('Reject'),
+                ),
+                TextButton(
+                  onPressed: _needsInfoWithNote,
+                  child: const Text('Needs info'),
+                ),
               ],
             ),
       body: RefreshIndicator(
@@ -553,38 +585,42 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _submissions.isEmpty
-                ? const Center(child: Text('No contributions in the queue.'))
-                : ListView.builder(
-                    itemCount: _submissions.length,
-                    itemBuilder: (context, index) {
-                      final item = _submissions[index];
-                      final selected = _selected.contains(item['id']);
-                      return CheckboxListTile(
-                        value: selected,
-                        onChanged: (value) {
-                          setState(() {
-                            if (value == true) {
-                              _selected.add(item['id'] as int);
-                            } else {
-                              _selected.remove(item['id'] as int);
-                            }
-                          });
-                        },
-                        title: Text((item['title'] ?? 'Untitled').toString()),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text((item['content'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${item['submission_type'] ?? 'question'} • ${_formatAge(item['created_at'])}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      );
+            ? const Center(child: Text('No contributions in the queue.'))
+            : ListView.builder(
+                itemCount: _submissions.length,
+                itemBuilder: (context, index) {
+                  final item = _submissions[index];
+                  final selected = _selected.contains(item['id']);
+                  return CheckboxListTile(
+                    value: selected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selected.add(item['id'] as int);
+                        } else {
+                          _selected.remove(item['id'].toString());
+                        }
+                      });
                     },
-                  ),
+                    title: Text((item['title'] ?? 'Untitled').toString()),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (item['content'] ?? '').toString(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item['submission_type'] ?? 'question'} • ${_formatAge(item['created_at'])}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }

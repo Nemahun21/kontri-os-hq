@@ -1,95 +1,88 @@
 import 'package:flutter/material.dart';
+import 'package:kohntri_os_hq/screens/admin/user_lookup_screen.dart';
 
+import '../../../admin_theme.dart';
 import '../../../models/admin_stats.dart';
+import '../../../widgets/admin_card.dart';
 
 class TopPlayersCard extends StatelessWidget {
-  final List<TopPlayer> players;
-
   const TopPlayersCard({super.key, required this.players});
+
+  final List<TopPlayer> players;
 
   @override
   Widget build(BuildContext context) {
     final list = players.take(5).toList();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Card(
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: list.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Text(
-                      'No players yet',
-                      style: TextStyle(color: Colors.grey),
-                    ),
+    return AdminCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminCardLabel('TOP PLAYERS', color: AdminColors.amber),
+          const SizedBox(height: 12),
+          if (list.isEmpty)
+            const Center(child: Text('No players yet', style: TextStyle(color: AdminColors.textSecondary)))
+          else
+            ...list.asMap().entries.map((entry) {
+              final index = entry.key;
+              final player = entry.value;
+              final isTop = index == 0;
+              return InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => UserLookupScreen(initialQuery: player.displayName),
                   ),
-                )
-              : Column(
-                  children: List.generate(list.length, (index) {
-                    final player = list[index];
-                    final rank = index + 1;
-                    final isTop = rank == 1;
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isTop ? Colors.amber.shade50 : Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isTop ? Colors.amber.shade300 : Colors.grey.shade200,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: isTop ? AdminColors.amber.withValues(alpha: 0.14) : AdminColors.border,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${index + 1}',
+                            style: TextStyle(
+                              color: isTop ? AdminColors.amber : AdminColors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ),
-                      child: Row(
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          player.displayName,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AdminColors.textPrimary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${player.totalScore}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AdminColors.textPrimary),
+                      ),
+                      const SizedBox(width: 8),
+                      Row(
                         children: [
-                          SizedBox(
-                            width: 30,
-                            child: Text(
-                              '#$rank',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isTop ? Colors.amber.shade800 : Colors.grey.shade700,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              player.displayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text(
-                            '${player.totalScore}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Row(
-                            children: [
-                              const Icon(Icons.local_fire_department, size: 14, color: Colors.orange),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${player.currentStreak}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ],
-                          ),
+                          const Icon(Icons.local_fire_department, size: 14, color: AdminColors.amber),
+                          const SizedBox(width: 2),
+                          Text('${player.currentStreak}', style: AdminText.caption),
                         ],
                       ),
-                    );
-                  }),
+                    ],
+                  ),
                 ),
-        ),
+              );
+            }),
+        ],
       ),
     );
   }
