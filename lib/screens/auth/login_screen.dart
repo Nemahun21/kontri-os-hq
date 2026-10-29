@@ -299,7 +299,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   try {
     await Supabase.instance.client.auth.resetPasswordForEmail(
       email,
-      redirectTo: 'https://nemahun21.github.io/kontri-os-hq/',
+      redirectTo: 'https://nemahun21.github.io/kontri-os-hq/?action=reset',
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
