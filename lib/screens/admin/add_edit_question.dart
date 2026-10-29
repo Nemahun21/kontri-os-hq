@@ -85,7 +85,6 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   Timer? _fadeTimer;
   int _position = 1;
 
-  // Language-specific fields
   String? _selectedLanguageId;
   String? _selectedThemeId;
   List<Map<String, dynamic>> _languages = [];
@@ -112,7 +111,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
 
   // ---- Review queue ----
   List<QueuedQuestion> _queue = [];
-  int _queueIndex = -1; // -1 = queue off
+  int _queueIndex = -1;
   bool _useFileLevel = false;
   String? _queueNote;
   int _formVersion = 0;
@@ -125,11 +124,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     'medium': <int>{},
     'hard': <int>{},
   };
+
+  // Design tokens
+  static const _primary = Color(0xFF1A5276);
+  static const _surface = Color(0xFFF7F9FC);
+  static const _cardRadius = 14.0;
+
   @override
   void initState() {
     super.initState();
 
-    // First, load any existing data for edit modes
     if (widget.dailyQuestion != null) {
       _loadDailyForEdit();
     } else if (widget.languageQuestion != null) {
@@ -145,36 +149,23 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         _loadExistingLevels();
       }
     } else {
-      // ---- New question ----
       if (widget.initialCategory != null) {
         _selectedCategory = widget.initialCategory!;
       }
-
-      // ✅ Infer language mode from provided IDs (fix for missing initialCategory)
       if (widget.initialLanguageId != null || widget.initialThemeId != null) {
         _selectedCategory = 'Languages';
       }
-
       if (widget.isDailyChallenge && widget.defaultPosition != null) {
         _position = widget.defaultPosition!;
         _positionController.text = _position.toString();
       }
-
-      // Store initial IDs, but don't fetch async yet
       if (widget.initialThemeId != null) {
         _selectedThemeId = widget.initialThemeId!;
       }
       if (widget.initialLanguageId != null) {
         _selectedLanguageId = widget.initialLanguageId!;
       }
-
-      print('🔍 Initial category: $_selectedCategory');
-      print('🔍 Initial languageId: ${widget.initialLanguageId}');
-      print('🔍 Initial themeId: ${widget.initialThemeId}');
-
       _updateOptionsForType();
-
-      // After setting up basic state, start async loading for dynamic data
       _initializeNewQuestionData();
     }
   }
@@ -182,12 +173,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   Future<void> _initializeNewQuestionData() async {
     if (_isLanguageMode) {
       if (widget.languageName != null) {
-        _selectedLanguageId = await _langService.getLanguageIdByName(
-          widget.languageName!,
-        );
+        _selectedLanguageId =
+            await _langService.getLanguageIdByName(widget.languageName!);
       }
       await _loadLanguages();
-
       if (_selectedLanguageId != null) {
         if (widget.themeName != null) {
           _selectedThemeId = await _langService.getThemeIdByNameAndLanguage(
@@ -197,20 +186,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }
         if (_selectedThemeId != null) {
           await _loadThemesForLanguage(_selectedLanguageId!);
-          await _updateNextPosition(); // position auto-computed for theme
+          await _updateNextPosition();
         }
       }
       return;
     }
-
-    // ---------- DAILY CHALLENGE FLOW ----------
     if (widget.isDailyChallenge) {
       await _updateNextPosition();
       await _loadExistingLevels();
       return;
     }
-
-    // ---------- ADVENTURE FLOW ----------
     await _loadExistingLevels();
   }
 
@@ -226,18 +211,20 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _culturalContextController.dispose();
     _levelController.dispose();
     _scrollController.dispose();
+    for (var c in _optionControllers) c.dispose();
+    _questionController.dispose();
+    _explanationController.dispose();
     super.dispose();
   }
+
+  // ─────────────────────────────────────────────
+  // Review queue
+  // ─────────────────────────────────────────────
 
   Future<void> _startReviewQueue() async {
     if (_isLanguageMode &&
         (_selectedLanguageId == null || _selectedThemeId == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Open this screen from a language theme first.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _toast('Open this screen from a language theme first.', error: true);
       return;
     }
     final result = await FilePicker.platform.pickFiles(
@@ -254,12 +241,13 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       var bytes = file.bytes!;
       if (isExcel) {
         final sheets = XlsxReader.read(bytes);
-        if (sheets.isEmpty)
+        if (sheets.isEmpty) {
           throw const FormatException('The Excel file has no data.');
+        }
         var chosen = sheets;
         if (sheets.length > 1) {
           final picked = await _pickSheets(sheets);
-          if (picked == null) return; // cancelled
+          if (picked == null) return;
           chosen = picked;
         }
         bytes = XlsxReader.toCsv(chosen);
@@ -267,21 +255,13 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       parsed = ReviewQueueParser.parse(bytes);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not read file. Use .xlsx or .csv with the template columns. ($e)',
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _toast('Could not read file. Use .xlsx or .csv with template columns. ($e)',
+          error: true);
       return;
     }
     if (parsed.items.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No questions found in the file.')),
-      );
+      _toast('No questions found in the file.');
       return;
     }
 
@@ -305,7 +285,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Review queue'),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Start review queue'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -313,24 +295,33 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
               children: [
                 Text(
                   '${parsed.items.length} questions ready'
-                  '${parsed.skipped.isEmpty ? '' : ' • ${parsed.skipped.length} rows skipped'}',
+                  '${parsed.skipped.isEmpty ? '' : '  ·  ${parsed.skipped.length} rows skipped'}',
+                  style: TextStyle(color: Colors.grey[700]),
                 ),
-                ...parsed.skipped
-                    .take(8)
-                    .map((s) => Text(s, style: const TextStyle(fontSize: 12))),
-                const SizedBox(height: 12),
+                if (parsed.skipped.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...parsed.skipped.take(6).map(
+                        (s) => Text(s,
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.orange[800])),
+                      ),
+                ],
+                const SizedBox(height: 16),
                 TextField(
                   controller: startCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Start at item',
                     border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
+                const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Use Level numbers from file'),
-                  subtitle: const Text('Off = next free level in the database'),
+                  subtitle:
+                      const Text('Off = next free level in the database'),
                   value: useFileLevel,
                   onChanged: (v) => setLocal(() => useFileLevel = v),
                 ),
@@ -339,17 +330,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            FilledButton(
               onPressed: () => Navigator.pop(ctx, {
                 'start': (int.tryParse(startCtrl.text) ?? 1)
                     .clamp(1, parsed.items.length)
                     .toInt(),
                 'useFileLevel': useFileLevel,
               }),
-              child: const Text('Start'),
+              child: const Text('Start review'),
             ),
           ],
         ),
@@ -366,7 +356,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           for (final s in sheets)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, [s]),
-              child: Text('${s.name}  •  ${s.rows.length - 1} rows'),
+              child: Text('${s.name}  ·  ${s.rows.length - 1} rows'),
             ),
           const Divider(),
           SimpleDialogOption(
@@ -390,7 +380,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         item.difficulty ?? _selectedDifficulty ?? Difficulty.medium;
 
     if (_isLanguageMode) {
-      await _updateNextPosition(); // next free position in this theme
+      await _updateNextPosition();
       if (!mounted) return;
       _queueNote = null;
     } else {
@@ -401,8 +391,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         final taken = _existingLevels[_selectedDifficulty!.name] ?? <int>{};
         if (taken.contains(item.level)) {
           _queueNote =
-              'File level ${item.level} is already used in '
-              '${_selectedDifficulty!.name}. Next free level ($_nextLevel) selected.';
+              'File level ${item.level} already used in ${_selectedDifficulty!.name}. '
+              'Next free ($_nextLevel) selected.';
         } else {
           _nextLevel = item.level;
           _levelController.text = item.level.toString();
@@ -416,9 +406,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     switch (item.type) {
       case QuestionType.multipleChoice:
         for (final c in _optionControllers) c.dispose();
-        _optionControllers = item.options
-            .map((o) => TextEditingController(text: o))
-            .toList();
+        _optionControllers =
+            item.options.map((o) => TextEditingController(text: o)).toList();
         _correctAnswerIndex = item.correctIndex;
         break;
       case QuestionType.trueFalse:
@@ -465,7 +454,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _culturalContextController.text = item.culturalContext;
     _points = item.points;
 
-    setState(() => _formVersion++); // rebuilds fields so initialValue refreshes
+    setState(() => _formVersion++);
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
@@ -481,12 +470,14 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Queue complete'),
-          content: Text('All $total items reviewed.'),
+          content: Text('All $total items reviewed and processed.'),
           actions: [
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
+              child: const Text('Done'),
             ),
           ],
         ),
@@ -496,6 +487,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     }
     setState(() => _queueIndex++);
     await _loadQueueItem();
+  }
+
+  Future<void> _previousQueueItem() async {
+    if (_queueIndex <= 0) return;
+    setState(() {
+      _isLoading = true;
+      _queueIndex--;
+    });
+    await _loadQueueItem();
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _skipQueueItem() async {
@@ -511,90 +512,41 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       _queueIndex = -1;
       _queueNote = null;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Queue stopped at item $at. Reload the file and start at $at to resume.',
-        ),
-      ),
-    );
+    _toast('Queue stopped at item $at. Reload file and start at $at to resume.');
   }
 
-  Widget _buildQueueBanner() {
-    final item = _queue[_queueIndex];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        border: Border.all(color: Colors.amber),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Review ${_queueIndex + 1} of ${_queue.length}  •  file row ${item.sourceRow}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              TextButton(
-                onPressed: _isLoading ? null : _skipQueueItem,
-                child: const Text('Skip'),
-              ),
-              TextButton(
-                onPressed: _isLoading ? null : _stopQueue,
-                child: const Text('Stop'),
-              ),
-            ],
-          ),
-          LinearProgressIndicator(value: _queueIndex / _queue.length),
-          if (_queueNote != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _queueNote!,
-                style: const TextStyle(color: Colors.deepOrange),
-              ),
-            ),
-          for (final w in item.warnings)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '⚠ $w',
-                style: const TextStyle(color: Colors.deepOrange),
-              ),
-            ),
-        ],
+  // ─────────────────────────────────────────────
+  // Shared helpers
+  // ─────────────────────────────────────────────
+
+  void _toast(String msg, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? Colors.red.shade700 : null,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
   Future<void> _loadExistingLevels() async {
     if (_selectedCategory.isEmpty) return;
-    final rows = await _questionService.getLevelNumbersByDifficulty(
-      _selectedCategory,
-    );
+    final rows =
+        await _questionService.getLevelNumbersByDifficulty(_selectedCategory);
     if (!mounted) return;
     setState(() {
       _existingLevels = rows;
-
-      // Only auto-pick a level for NEW questions.
       if (widget.question == null && _selectedDifficulty != null) {
         final existing = rows[_selectedDifficulty!.name] ?? <int>{};
-        final maxLevel = existing.isEmpty
-            ? 0
-            : existing.reduce((a, b) => a > b ? a : b);
+        final maxLevel =
+            existing.isEmpty ? 0 : existing.reduce((a, b) => a > b ? a : b);
         _nextLevel = maxLevel + 1;
         _levelController.text = _nextLevel.toString();
       }
     });
   }
 
-  // Audio helpers
   Future<void> _fadeIn() async {
     const steps = 10;
     const stepDuration = Duration(milliseconds: 50);
@@ -620,17 +572,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       }
     }
     await _previewPlayer?.stop();
-    if (mounted) {
-      setState(() {
-        _isPreviewPlaying = false;
-      });
-    }
+    if (mounted) setState(() => _isPreviewPlaying = false);
   }
 
   void _showPreview() {
     final question = _buildCurrentObject(forPreview: true);
     final questionData = question.toSupabase();
-    // Add local audio path for preview if a new file is picked
     if (_audioFile != null) {
       questionData['local_audio_path'] = _audioFile!.path;
     }
@@ -649,22 +596,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       _previewPlayer = AudioPlayer();
       _previewPlayer!.onPlayerStateChanged.listen((state) {
         if (mounted) {
-          setState(() {
-            _isPreviewPlaying = state == PlayerState.playing;
-          });
+          setState(() => _isPreviewPlaying = state == PlayerState.playing);
         }
       });
-      Source source;
-      if (_audioFile!.bytes != null) {
-        source = BytesSource(_audioFile!.bytes!);
-      } else {
-        source = DeviceFileSource(_audioFile!.path!);
-      }
+      Source source = _audioFile!.bytes != null
+          ? BytesSource(_audioFile!.bytes!)
+          : DeviceFileSource(_audioFile!.path!);
       await _previewPlayer!.setSource(source);
       if (_trimStart > 0) {
-        await _previewPlayer!.seek(
-          Duration(milliseconds: (_trimStart * 1000).round()),
-        );
+        await _previewPlayer!
+            .seek(Duration(milliseconds: (_trimStart * 1000).round()));
       }
       await _previewPlayer!.setVolume(0);
       await _previewPlayer!.resume();
@@ -675,22 +616,15 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }
       });
     } catch (e) {
-      print('Preview error: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not preview audio: $e')));
+      _toast('Could not preview audio: $e', error: true);
     }
   }
 
   Future<void> _stopPreview() async {
     if (_previewPlayer != null) {
       await _fadeOut();
-    } else {
-      if (mounted) {
-        setState(() {
-          _isPreviewPlaying = false;
-        });
-      }
+    } else if (mounted) {
+      setState(() => _isPreviewPlaying = false);
     }
   }
 
@@ -722,15 +656,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           });
         }
       } catch (e) {
-        print('Error getting audio duration: $e');
+        if (kDebugMode) print('Error getting audio duration: $e');
       } finally {
-        if (mounted) {
-          setState(() => _isLoadingDuration = false);
-        }
+        if (mounted) setState(() => _isLoadingDuration = false);
       }
     }
   }
-  // ----------------------------------------------------------------------
 
   Future<void> _loadLanguages() async {
     final data = await _langService.getLanguages();
@@ -743,9 +674,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   }
 
   List<int> _getBlankIndices() => List.generate(
-    _sentenceSegments.length,
-    (i) => i,
-  ).where((i) => _sentenceSegments[i] == null).toList();
+        _sentenceSegments.length,
+        (i) => i,
+      ).where((i) => _sentenceSegments[i] == null).toList();
 
   String _generateWordId() =>
       'w${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(1 << 20)}';
@@ -753,13 +684,13 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   void _updateOptionsForType() {
     for (var c in _optionControllers) c.dispose();
     _optionControllers = [];
-    for (var c in _matchLeftControllers) c.dispose(); // 👈
+    for (var c in _matchLeftControllers) c.dispose();
     for (var c in _matchRightControllers) c.dispose();
-    _matchLeftControllers = []; // 👈
+    _matchLeftControllers = [];
     _matchRightControllers = [];
-
     _correctAnswerIndex = 0;
     _selectedImages.clear();
+
     switch (_selectedType) {
       case QuestionType.trueFalse:
         _optionControllers = [
@@ -769,14 +700,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         _selectedImages = [null, null];
         break;
       case QuestionType.multipleChoice:
-        _optionControllers = List.generate(4, (i) => TextEditingController());
+        _optionControllers = List.generate(4, (_) => TextEditingController());
         _selectedImages = [];
         break;
       case QuestionType.imageChoice:
         _optionControllers = List.generate(
-          4,
-          (i) => TextEditingController(text: 'Option ${i + 1}'),
-        );
+            4, (i) => TextEditingController(text: 'Option ${i + 1}'));
         _selectedImages = [null];
         break;
       case QuestionType.dragAndDrop:
@@ -803,13 +732,13 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         _matchLeftControllers = [TextEditingController()];
         _matchRightControllers = [TextEditingController()];
         break;
-      //case QuestionType.mapLocation:
       case QuestionType.audioGuess:
         _optionControllers = [TextEditingController()];
         _selectedImages = [];
         break;
     }
-    _selectedImageBytes = List<Uint8List?>.filled(_selectedImages.length, null);
+    _selectedImageBytes =
+        List<Uint8List?>.filled(_selectedImages.length, null);
   }
 
   dynamic _buildCurrentObject({bool forPreview = false}) {
@@ -818,27 +747,24 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         .where((t) => t.isNotEmpty)
         .toList();
     Map<String, dynamic>? typeData;
+
     if (_selectedType == QuestionType.matchPairs) {
       final pairs = <Map<String, String>>[];
       for (int i = 0; i < _matchLeftControllers.length; i++) {
         final left = _matchLeftControllers[i].text.trim();
         final right = _matchRightControllers[i].text.trim();
-        if (left.isNotEmpty && right.isNotEmpty)
+        if (left.isNotEmpty && right.isNotEmpty) {
           pairs.add({'left': left, 'right': right});
+        }
       }
       if (pairs.isNotEmpty) {
         typeData = {
           'pairs': pairs,
           'correctMatches': List.generate(
-            pairs.length,
-            (i) => {'leftIndex': i, 'rightIndex': i},
-          ),
+              pairs.length, (i) => {'leftIndex': i, 'rightIndex': i}),
         };
       }
     } else if (_selectedType == QuestionType.fillBlank) {
-      // Only keep mappings whose key points at a real blank in
-      // the current sentence layout. Any orphaned key (left over from
-      // a deleted segment) is dropped here instead of being written.
       final validBlankIndices = _getBlankIndices().toSet();
       typeData = {
         'sentenceParts': _sentenceSegments,
@@ -849,8 +775,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         },
       };
     } else if (_selectedType == QuestionType.audioGuess) {
-      if (_existingAudioUrl != null)
-        typeData = {'audio_url': _existingAudioUrl};
+      if (_existingAudioUrl != null) typeData = {'audio_url': _existingAudioUrl};
     }
 
     if (widget.isDailyChallenge) {
@@ -906,9 +831,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         imageUrls: imageUrls,
         points: _points,
         difficulty: _selectedDifficulty ?? Difficulty.medium,
-        // level: _nextLevel,
         typeData: typeData,
-        // 👇 ADD THESE THREE LINES:
         scenario: _scenarioController.text.trim().isEmpty
             ? null
             : _scenarioController.text.trim(),
@@ -922,6 +845,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Save (logic unchanged)
+  // ─────────────────────────────────────────────
+
   Future<void> _saveQuestion() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -930,12 +857,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             _selectedType == QuestionType.trueFalse) &&
         (_correctAnswerIndex < 0 ||
             _correctAnswerIndex >= _optionControllers.length)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Select the correct option first.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _toast('Select the correct option first.', error: true);
       return;
     }
 
@@ -949,41 +871,25 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }
       }
       if (validPairs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please add at least one valid pair (left + right).'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        _toast('Add at least one valid pair (left + right).', error: true);
         return;
       }
     }
 
-    print('🔍 Language ID: $_selectedLanguageId');
-    print('🔍 Theme ID: $_selectedThemeId');
     setState(() => _isLoading = true);
 
     try {
-      // ============================================================
-      // 1. DAILY CHALLENGE
-      // ============================================================
       if (widget.isDailyChallenge) {
         final base = _buildCurrentObject() as DailyChallengeQuestion;
-
         String? audioUrl = base.audioUrl;
         if (_audioFile != null) {
           final userId =
               Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
           final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-          audioUrl = await _uploadAudio(
-            _audioFile!,
-            userId,
-            tempId,
-            isDaily: true,
-          );
+          audioUrl =
+              await _uploadAudio(_audioFile!, userId, tempId, isDaily: true);
           if (audioUrl == null) throw Exception('Audio upload failed');
         }
-
         final finalQuestion = DailyChallengeQuestion(
           id: base.id,
           dailyChallengeId: base.dailyChallengeId,
@@ -998,31 +904,20 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           position: base.position,
           trimStart: _trimStart,
           trimEnd: _trimEnd,
-          //typeData: base.typeData,
         );
-
         if (widget.dailyQuestion == null) {
           await _dailyService.addQuestion(finalQuestion);
         } else {
           await _dailyService.updateQuestion(finalQuestion);
         }
-      }
-      // ============================================================
-      // 2. LANGUAGE QUESTION
-      // ============================================================
-      else if (_isLanguageMode) {
+      } else if (_isLanguageMode) {
         if (_selectedLanguageId == null || _selectedLanguageId!.isEmpty) {
-          throw Exception(
-            'Language ID is missing. Please select a valid language.',
-          );
+          throw Exception('Language ID is missing.');
         }
         if (_selectedThemeId == null || _selectedThemeId!.isEmpty) {
-          throw Exception('Theme ID is missing. Please select a valid theme.');
+          throw Exception('Theme ID is missing.');
         }
-
         final base = _buildCurrentObject() as LanguageQuestion;
-
-        // Upload image(s) — preserve existing URL if no new image is picked
         String? imageUrl = widget.languageQuestion?.imageUrl;
         if (_selectedType == QuestionType.imageChoice ||
             _selectedType == QuestionType.dragAndDrop) {
@@ -1031,39 +926,27 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             if (file != null) {
               final userId =
                   Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
-              final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-              final url = await _uploadImage(
-                file,
-                userId,
-                tempId,
-                isLanguage: true,
-              );
-              if (url == null) {
-                throw Exception('Image upload failed');
-              }
+              final tempId =
+                  DateTime.now().millisecondsSinceEpoch.toString();
+              final url =
+                  await _uploadImage(file, userId, tempId, isLanguage: true);
+              if (url == null) throw Exception('Image upload failed');
               imageUrl = url;
               break;
             }
           }
         }
-
-        // Upload audio
         String? audioUrl = base.audioUrl;
         if (_audioFile != null) {
           final userId =
               Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
           final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-          audioUrl = await _uploadAudio(
-            _audioFile!,
-            userId,
-            tempId,
-            isLanguage: true,
-          );
+          audioUrl = await _uploadAudio(_audioFile!, userId, tempId,
+              isLanguage: true);
           if (audioUrl == null) throw Exception('Audio upload failed');
         } else if (_existingAudioUrl != null) {
           audioUrl = _existingAudioUrl;
         }
-
         final finalQuestion = LanguageQuestion(
           id: base.id,
           languageTypeId: _selectedLanguageId!,
@@ -1081,18 +964,13 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           trimEnd: _trimEnd,
           typeData: base.typeData,
         );
-
         final editId = widget.languageQuestion?.id ?? widget.question?.id;
         if (editId == null || editId.isEmpty) {
           await _langService.addQuestion(finalQuestion);
         } else {
           await _langService.updateQuestion(finalQuestion);
         }
-      }
-      // ============================================================
-      // 3. ADVENTURE (existing code)
-      // ============================================================
-      else {
+      } else {
         final base = _buildCurrentObject() as Question;
         List<String> optionsList;
         if (_selectedType == QuestionType.multipleChoice) {
@@ -1101,9 +979,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
               .where((text) => text.isNotEmpty)
               .toList();
           if (optionsList.length < 2) {
-            throw Exception(
-              'At least two options required for multiple choice',
-            );
+            throw Exception('At least two options required');
           }
         } else if (_selectedType == QuestionType.trueFalse) {
           optionsList = ['True', 'False'];
@@ -1115,7 +991,6 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         if (_selectedType == QuestionType.imageChoice ||
             _selectedType == QuestionType.dragAndDrop) {
           imageUrls = {};
-          // Preserve URLs already stored on the question being edited
           if (widget.question?.imageUrls != null) {
             imageUrls.addAll(widget.question!.imageUrls!);
           }
@@ -1133,6 +1008,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             }
           }
         }
+
         Map<String, dynamic>? typeData = base.typeData;
         if (_audioFile != null) {
           final userId =
@@ -1154,37 +1030,27 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           typeData['trim_end'] = _trimEnd;
         }
 
-        // ---- Duplicate check ----
         final resolvedDifficulty = _selectedDifficulty ?? base.difficulty;
         final resolvedLevel = _nextLevel ?? 1;
         final isNew = widget.question == null;
 
         if (isNew) {
-          // Refuse if the target level is already occupied.
           final existing = await Supabase.instance.client
               .from('level_questions')
               .select('question_id')
               .eq('category', _selectedCategory)
               .eq('difficulty', resolvedDifficulty.name)
               .eq('level_number', resolvedLevel);
-
           if (existing.isNotEmpty) {
             if (mounted) {
               setState(() => _isLoading = false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Level $resolvedLevel (${resolvedDifficulty.name}) '
-                    'already has a question. Pick a different level.',
-                  ),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              _toast(
+                  'Level $resolvedLevel (${resolvedDifficulty.name}) already has a question.',
+                  error: true);
             }
             return;
           }
         } else {
-          // Edit — allow the same level only if it is the same question.
           final existing = await Supabase.instance.client
               .from('level_questions')
               .select('question_id')
@@ -1192,25 +1058,17 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
               .eq('difficulty', resolvedDifficulty.name)
               .eq('level_number', resolvedLevel)
               .neq('question_id', widget.question!.id);
-
           if (existing.isNotEmpty) {
             if (mounted) {
               setState(() => _isLoading = false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Level $resolvedLevel (${resolvedDifficulty.name}) '
-                    'already has a different question. Pick a different level.',
-                  ),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              _toast(
+                  'Level $resolvedLevel (${resolvedDifficulty.name}) already has a different question.',
+                  error: true);
             }
             return;
           }
         }
 
-        // ---- Build and save ----
         final question = Question(
           id: widget.question?.id ?? '',
           question: base.question,
@@ -1229,8 +1087,6 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           culturalContext: base.culturalContext,
         );
 
-        print('📦 Saving question data: ${question.toSupabase()}');
-
         if (isNew) {
           final ok = await _questionService.addQuestion(question);
           if (!ok) throw Exception('Save failed. Nothing was added.');
@@ -1239,16 +1095,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }
       }
 
-      // ============================================================
-      // SUCCESS
-      // ============================================================
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Saved!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        _toast('Saved!');
         if (_queueActive) {
           await _advanceQueue();
         } else {
@@ -1256,13 +1104,11 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }
       }
     } catch (e, stack) {
-      print('❌ Save error: $e');
-      print(stack);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+      if (kDebugMode) {
+        print('❌ Save error: $e');
+        print(stack);
       }
+      if (mounted) _toast('Error: $e', error: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -1284,26 +1130,19 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       } else {
         bucket = 'question_images';
       }
-
-      // Extension: use image.name (works on web and mobile — path is a
-      // blob URL on web, so path.extension would return '')
       String fileExt = '.jpg';
       final name = image.name;
       if (name.isNotEmpty) {
         final ext = path.extension(name);
         if (ext.isNotEmpty) fileExt = ext;
       }
-
       final fileName =
           '${isDaily ? 'daily' : (isLanguage ? 'lang' : 'question')}_${tempId}_${DateTime.now().millisecondsSinceEpoch}$fileExt';
-
       final bytes = await image.readAsBytes();
       await Supabase.instance.client.storage
           .from(bucket)
           .uploadBinary(fileName, bytes);
-      return Supabase.instance.client.storage
-          .from(bucket)
-          .getPublicUrl(fileName);
+      return Supabase.instance.client.storage.from(bucket).getPublicUrl(fileName);
     } catch (e) {
       if (kDebugMode) print('❌ Upload error: $e');
       return null;
@@ -1319,23 +1158,20 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   }) async {
     try {
       String bucket;
-      if (isDaily)
+      if (isDaily) {
         bucket = 'daily_challenge_audio';
-      else if (isLanguage)
+      } else if (isLanguage) {
         bucket = 'language_question_audio';
-      else
+      } else {
         bucket = 'question_audio';
-
+      }
       final fileName =
           '${isDaily ? 'daily' : (isLanguage ? 'lang' : 'question')}_${tempId}_${DateTime.now().millisecondsSinceEpoch}_${audio.name}';
-
       Uint8List bytes;
       if (kIsWeb) {
-        // On web, PlatformFile.bytes is available; otherwise use readBytes from the file
         if (audio.bytes != null) {
           bytes = audio.bytes!;
         } else {
-          // This should not happen on web if picker returns bytes
           throw Exception('No bytes available on web');
         }
       } else {
@@ -1344,11 +1180,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await Supabase.instance.client.storage
           .from(bucket)
           .uploadBinary(fileName, bytes);
-      return Supabase.instance.client.storage
-          .from(bucket)
-          .getPublicUrl(fileName);
+      return Supabase.instance.client.storage.from(bucket).getPublicUrl(fileName);
     } catch (e) {
-      print('Upload error: $e');
+      if (kDebugMode) print('Upload error: $e');
       return null;
     }
   }
@@ -1360,13 +1194,15 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     if (!mounted) return;
     setState(() {
       while (_selectedImages.length <= index) _selectedImages.add(null);
-      while (_selectedImageBytes.length <= index) {
-        _selectedImageBytes.add(null);
-      }
+      while (_selectedImageBytes.length <= index) _selectedImageBytes.add(null);
       _selectedImages[index] = picked;
       _selectedImageBytes[index] = bytes;
     });
   }
+
+  // ─────────────────────────────────────────────
+  // Load for edit (logic mostly unchanged)
+  // ─────────────────────────────────────────────
 
   void _loadQuestionForEdit() {
     final q = widget.question!;
@@ -1382,29 +1218,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _selectedType = q.type;
     _correctAnswerIndex = q.correctAnswerIndex;
     _points = q.points;
-
-    // ---- Options (for multiple choice / true-false) ----
-    _optionControllers = q.options
-        .map((opt) => TextEditingController(text: opt))
-        .toList();
-
+    _optionControllers =
+        q.options.map((opt) => TextEditingController(text: opt)).toList();
     if (q.imageUrls != null) {
       final count = q.imageUrls!.length;
       _optionControllers = List.generate(
-        count,
-        (i) => TextEditingController(text: q.options[i]),
-      );
+          count, (i) => TextEditingController(text: q.options[i]));
       _selectedImages = List.generate(count, (_) => null);
       _selectedImageBytes = List<Uint8List?>.filled(count, null);
     }
-
-    // ---- Initialize blank type-specific fields ONCE ----
-    // (this clears and sets up controllers for the current type)
-    if (_optionControllers.isEmpty) {
-      _updateOptionsForType();
-    }
-
-    // ---- Restore type-specific data (AFTER _updateOptionsForType) ----
+    if (_optionControllers.isEmpty) _updateOptionsForType();
     if (q.typeData != null) {
       final data = q.typeData!;
       _existingAudioUrl = data['audio_url'] as String?;
@@ -1420,19 +1243,11 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         if (idx == null || !validBlanks.contains(idx)) continue;
         _blankMappings.add(MapEntry(idx, e.value as String));
       }
-
-      // ---- Restore match pairs (LAST, so nothing overwrites it) ----
       if (_selectedType == QuestionType.matchPairs) {
         final pairsList = (data['pairs'] as List?) ?? [];
         if (pairsList.isNotEmpty) {
-          // Dispose the placeholder controller created by _updateOptionsForType
-          for (final c in _matchLeftControllers) {
-            c.dispose();
-          }
-          for (final c in _matchRightControllers) {
-            c.dispose();
-          }
-
+          for (final c in _matchLeftControllers) c.dispose();
+          for (final c in _matchRightControllers) c.dispose();
           _matchLeftControllers = pairsList.map((p) {
             final left = (p as Map)['left']?.toString() ?? '';
             return TextEditingController(text: left);
@@ -1458,15 +1273,14 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _trimStart = q.trimStart ?? 0.0;
     _trimEnd = q.trimEnd ?? 0.0;
     _existingAudioUrl = q.audioUrl;
-    _optionControllers = q.options
-        .map((opt) => TextEditingController(text: opt))
-        .toList();
+    _optionControllers =
+        q.options.map((opt) => TextEditingController(text: opt)).toList();
     _updateOptionsForType();
   }
 
   void _loadLanguageForEdit() {
     final q = widget.languageQuestion!;
-    _selectedCategory = 'Languages'; // ✅ CRITICAL FIX
+    _selectedCategory = 'Languages';
     _questionController.text = q.question;
     _explanationController.text = q.explanation ?? '';
     _selectedType = QuestionType.fromString(q.type);
@@ -1479,9 +1293,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _existingAudioUrl = q.audioUrl;
     _selectedLanguageId = q.languageTypeId;
     _selectedThemeId = q.themeId;
-    _optionControllers = q.options
-        .map((opt) => TextEditingController(text: opt))
-        .toList();
+    _optionControllers =
+        q.options.map((opt) => TextEditingController(text: opt)).toList();
     _loadLanguages();
     _loadThemesForLanguage(q.languageTypeId);
     _updateOptionsForType();
@@ -1493,9 +1306,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await _loadThemesForLanguage(_selectedLanguageId!);
     }
     if (_selectedThemeId == null) return;
-    final questions = await _langService.getQuestionsForTheme(
-      _selectedThemeId!,
-    );
+    final questions =
+        await _langService.getQuestionsForTheme(_selectedThemeId!);
     LanguageQuestion? match;
     for (final item in questions) {
       if (item.id == widget.question!.id) {
@@ -1510,84 +1322,348 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     });
   }
 
-  // ----------------------------------------------------------------------
-  // UI Builder Methods
-  Widget _buildDropdown(
-    String label,
-    List<String> items,
-    int value,
-    Function(int?) onChanged,
-  ) {
+  Future<void> _updateNextPosition() async {
+    if (widget.isDailyChallenge) {
+      final next = await _dailyService.getNextPosition();
+      setState(() {
+        _position = next;
+        _positionController.text = _position.toString();
+      });
+    } else if (_isLanguageMode && _selectedThemeId != null) {
+      final max = await _langService.getMaxPositionForTheme(_selectedThemeId!);
+      setState(() {
+        _position = max + 1;
+        _positionController.text = _position.toString();
+      });
+    }
+  }
+
+  Future<void> _openCsvImport() async {
+    CsvImportMode mode;
+    if (widget.isDailyChallenge) {
+      mode = CsvImportMode.daily;
+    } else if (_isLanguageMode) {
+      mode = CsvImportMode.language;
+    } else {
+      mode = CsvImportMode.adventure;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CsvQuestionImporter(
+          mode: mode,
+          category: _selectedCategory,
+          difficulty: _selectedDifficulty,
+          languageId: _selectedLanguageId,
+          themeId: _selectedThemeId,
+          startingPosition: _position,
+          dailyChallengeId: DailyChallengeService.activeDailyChallengeId,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadExistingLevels();
+      await _updateNextPosition();
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // UI building blocks
+  // ─────────────────────────────────────────────
+
+  Widget _sectionCard({
+    required String title,
+    String? subtitle,
+    required List<Widget> children,
+    IconData? icon,
+  }) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_cardRadius),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18, color: _primary),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ],
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            ],
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQueueBanner() {
+    final item = _queue[_queueIndex];
+    final progress = (_queueIndex + 1) / _queue.length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.amber.shade50, Colors.orange.shade50],
+        ),
+        borderRadius: BorderRadius.circular(_cardRadius),
+        border: Border.all(color: Colors.amber.shade300),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+            child: Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade700,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_queueIndex + 1} / ${_queue.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'File row ${item.sourceRow}',
+                    style: TextStyle(
+                      color: Colors.grey[800],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: Colors.amber.shade100,
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(Colors.amber.shade700),
+              ),
+            ),
+          ),
+          if (_queueNote != null || item.warnings.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_queueNote != null)
+                    Text(_queueNote!,
+                        style: TextStyle(
+                            color: Colors.deepOrange[800], fontSize: 12)),
+                  for (final w in item.warnings)
+                    Text('⚠ $w',
+                        style: TextStyle(
+                            color: Colors.deepOrange[800], fontSize: 12)),
+                ],
+              ),
+            ),
+          const SizedBox(height: 4),
+          // Navigation row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: (_isLoading || _queueIndex <= 0)
+                      ? null
+                      : _previousQueueItem,
+                  icon: const Icon(Icons.chevron_left, size: 20),
+                  label: const Text('Previous'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _isLoading ? null : _skipQueueItem,
+                  child: const Text('Skip'),
+                ),
+                TextButton(
+                  onPressed: _isLoading ? null : _stopQueue,
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('Stop'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContextChip() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _primary,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: AutoScrollText(
+        text: _getContextLabel(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  String _getContextLabel() {
+    if (widget.isDailyChallenge) return 'Daily Challenge';
+    if (_isLanguageMode) {
+      String langName = widget.languageName ?? '?';
+      if (widget.languageName == null && _selectedLanguageId != null) {
+        final found = _languages.cast<Map<String, dynamic>>().firstWhere(
+              (l) => l['id'] == _selectedLanguageId,
+              orElse: () => {},
+            );
+        if (found.isNotEmpty) langName = found['name'] as String;
+      }
+      String themeName = widget.themeName ?? '?';
+      if (widget.themeName == null && _selectedThemeId != null) {
+        final found = _themes.firstWhere(
+          (t) => t.id == _selectedThemeId,
+          orElse: () =>
+              LanguageTheme(id: '', name: '', languageTypeId: '', position: 0),
+        );
+        if (found.id.isNotEmpty) themeName = found.name;
+      }
+      return '$langName  →  $themeName';
+    }
+    return 'Category: ${widget.initialCategory ?? _selectedCategory}';
+  }
+
+  Widget _buildTypeSelector() {
     return DropdownButtonFormField<int>(
-      value: value,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
+      value: _selectedType.index,
+      decoration: const InputDecoration(
+        labelText: 'Question type',
+        border: OutlineInputBorder(),
+        isDense: true,
       ),
       items: List.generate(
-        items.length,
-        (i) => DropdownMenuItem(value: i, child: Text(items[i])),
+        QuestionType.values.length,
+        (i) => DropdownMenuItem(
+          value: i,
+          child: Text(QuestionType.values[i].displayName),
+        ),
       ),
-      onChanged: onChanged,
+      onChanged: (val) {
+        if (val == null) return;
+        setState(() {
+          _selectedType = QuestionType.values[val];
+          _updateOptionsForType();
+        });
+      },
     );
   }
 
   Widget _buildOptionsFields() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Options (select the correct one)',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        ...List.generate(_optionControllers.length, (i) {
-          final isCorrect = i == _correctAnswerIndex;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isCorrect ? Colors.green : Colors.grey.shade300,
-                width: isCorrect ? 2 : 1,
-              ),
+      children: List.generate(_optionControllers.length, (i) {
+        final isCorrect = i == _correctAnswerIndex;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isCorrect ? Colors.green : Colors.grey.shade300,
+              width: isCorrect ? 2 : 1,
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _optionControllers[i],
-                    decoration: InputDecoration(
-                      labelText: 'Option ${String.fromCharCode(65 + i)}',
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      suffixIcon: isCorrect
-                          ? const Icon(Icons.check_circle, color: Colors.green)
-                          : null,
-                    ),
-                    validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
+            color: isCorrect ? Colors.green.shade50 : null,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _optionControllers[i],
+                  decoration: InputDecoration(
+                    labelText: 'Option ${String.fromCharCode(65 + i)}',
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    suffixIcon: isCorrect
+                        ? const Icon(Icons.check_circle, color: Colors.green)
+                        : null,
                   ),
+                  validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
                 ),
-                Radio<int>(
-                  value: i,
-                  groupValue: _correctAnswerIndex,
-                  onChanged: (val) =>
-                      setState(() => _correctAnswerIndex = val!),
-                  activeColor: Colors.green,
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
+              ),
+              Radio<int>(
+                value: i,
+                groupValue: _correctAnswerIndex,
+                onChanged: (val) =>
+                    setState(() => _correctAnswerIndex = val!),
+                activeColor: Colors.green,
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 
+  Widget? _buildImagePreview(int index) {
+    if (index < _selectedImageBytes.length &&
+        _selectedImageBytes[index] != null) {
+      return Image.memory(_selectedImageBytes[index]!,
+          width: 72, height: 72, fit: BoxFit.cover);
+    }
+    final existingUrl = widget.question?.imageUrls?[index.toString()];
+    if (existingUrl != null && existingUrl.isNotEmpty) {
+      return Image.network(
+        existingUrl,
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.broken_image, size: 28),
+      );
+    }
+    return null;
+  }
+
   Widget _buildImageChoiceFields() {
-    // Safety: ensure lists are same length and correctAnswerIndex is valid
     if (_optionControllers.isEmpty) return const SizedBox.shrink();
     while (_selectedImages.length < _optionControllers.length) {
       _selectedImages.add(null);
@@ -1601,20 +1677,14 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     if (_correctAnswerIndex < 0) _correctAnswerIndex = 0;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Image Options',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
         ...List.generate(_optionControllers.length, (i) {
           final isCorrect = i == _correctAnswerIndex;
           return Container(
-            margin: const EdgeInsets.only(bottom: 16),
+            margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: isCorrect ? Colors.green : Colors.grey.shade300,
                 width: isCorrect ? 2 : 1,
@@ -1628,12 +1698,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                       child: TextFormField(
                         controller: _optionControllers[i],
                         decoration: const InputDecoration(
-                          labelText: 'Option text (optional)',
+                          labelText: 'Label (optional)',
                           border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Radio<int>(
                       value: i,
                       groupValue: _correctAnswerIndex,
@@ -1643,10 +1713,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     ),
                     if (_optionControllers.length > 1)
                       IconButton(
-                        icon: const Icon(
-                          Icons.remove_circle,
-                          color: Colors.red,
-                        ),
+                        icon: const Icon(Icons.remove_circle_outline,
+                            color: Colors.red),
                         onPressed: () => _removeImageOption(i),
                       ),
                   ],
@@ -1655,22 +1723,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 Row(
                   children: [
                     if (_buildImagePreview(i) != null)
-                      Container(
-                        width: 80,
-                        height: 80,
-                        clipBehavior: Clip.antiAlias,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
                         child: _buildImagePreview(i),
                       ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
                       onPressed: () => _pickImage(i),
-                      icon: const Icon(Icons.image),
+                      icon: const Icon(Icons.image_outlined, size: 18),
                       label: Text(
-                        _buildImagePreview(i) == null ? 'Pick Image' : 'Change',
-                      ),
+                          _buildImagePreview(i) == null ? 'Pick' : 'Change'),
                     ),
                   ],
                 ),
@@ -1678,10 +1740,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             ),
           );
         }),
-        const SizedBox(height: 8),
-        ElevatedButton(
+        TextButton.icon(
           onPressed: _addImageOption,
-          child: const Text('Add Image Option'),
+          icon: const Icon(Icons.add),
+          label: const Text('Add option'),
         ),
       ],
     );
@@ -1711,20 +1773,14 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
 
   Widget _buildDragAndDropFields() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Drag & Drop Images',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
         ...List.generate(_optionControllers.length, (i) {
           final isCorrect = i == _correctAnswerIndex;
           return Container(
-            margin: const EdgeInsets.only(bottom: 16),
+            margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: isCorrect ? Colors.green : Colors.grey.shade300,
                 width: isCorrect ? 2 : 1,
@@ -1736,29 +1792,22 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Image ${i + 1}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      if (_buildImagePreview(i) != null)
-                        Container(
-                          width: 80,
-                          height: 80,
-                          clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      Text('Image ${i + 1}',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (_buildImagePreview(i) != null) ...[
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
                           child: _buildImagePreview(i),
                         ),
+                      ],
                       const SizedBox(height: 8),
-                      ElevatedButton.icon(
+                      OutlinedButton.icon(
                         onPressed: () => _pickImage(i),
-                        icon: const Icon(Icons.image),
-                        label: Text(
-                          _buildImagePreview(i) == null
-                              ? 'Pick Image'
-                              : 'Change',
-                        ),
+                        icon: const Icon(Icons.image_outlined, size: 18),
+                        label: Text(_buildImagePreview(i) == null
+                            ? 'Pick'
+                            : 'Change'),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -1766,6 +1815,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Label (optional)',
                           border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                       ),
                     ],
@@ -1780,7 +1830,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 ),
                 if (_optionControllers.length > 1)
                   IconButton(
-                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                    icon: const Icon(Icons.remove_circle_outline,
+                        color: Colors.red),
                     onPressed: () {
                       setState(() {
                         _optionControllers[i].dispose();
@@ -1789,8 +1840,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                         if (i < _selectedImageBytes.length) {
                           _selectedImageBytes.removeAt(i);
                         }
-                        if (_correctAnswerIndex >= _optionControllers.length) {
-                          _correctAnswerIndex = _optionControllers.length - 1;
+                        if (_correctAnswerIndex >=
+                            _optionControllers.length) {
+                          _correctAnswerIndex =
+                              _optionControllers.length - 1;
                         }
                       });
                     },
@@ -1799,36 +1852,28 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             ),
           );
         }),
-        ElevatedButton(
+        TextButton.icon(
           onPressed: () => setState(() {
             _optionControllers.add(TextEditingController());
             _selectedImages.add(null);
             _selectedImageBytes.add(null);
           }),
-          child: const Text('Add Image'),
+          icon: const Icon(Icons.add),
+          label: const Text('Add image'),
         ),
       ],
     );
   }
 
   Widget _buildTextInputFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Correct Answer',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _optionControllers[0],
-          decoration: const InputDecoration(
-            labelText: 'Expected answer',
-            border: OutlineInputBorder(),
-          ),
-          validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
-        ),
-      ],
+    return TextFormField(
+      controller: _optionControllers[0],
+      decoration: const InputDecoration(
+        labelText: 'Expected answer',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
     );
   }
 
@@ -1836,13 +1881,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Sentence Segments',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        const Text('Sentence segments',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
         ...List.generate(_sentenceSegments.length, (i) {
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
                 Expanded(
@@ -1852,40 +1896,37 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                           decoration: InputDecoration(
                             labelText: 'Segment ${i + 1}',
                             border: const OutlineInputBorder(),
+                            isDense: true,
                           ),
                           onChanged: (val) =>
                               setState(() => _sentenceSegments[i] = val),
                         )
-                      : const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Text(
-                            'BLANK',
-                            style: TextStyle(fontStyle: FontStyle.italic),
+                      : Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber.shade200),
                           ),
+                          child: const Text('BLANK',
+                              style: TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  fontWeight: FontWeight.w600)),
                         ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close, size: 20),
                   onPressed: () => setState(() {
-                    // Snapshot current mappings before mutating the segments list.
-                    final oldMappings = Map<int, String>.fromEntries(
-                      _blankMappings,
-                    );
-
-                    // Remove the segment at index i.
+                    final oldMappings =
+                        Map<int, String>.fromEntries(_blankMappings);
                     _sentenceSegments.removeAt(i);
-
-                    // Rebuild mappings:
-                    //   * skip the removed index,
-                    //   * shift every index > i down by 1,
-                    //   * drop any mapping whose new index is not a blank anymore.
                     final validBlanks = _getBlankIndices().toSet();
                     final rebuilt = <MapEntry<int, String>>[];
                     for (final entry in oldMappings.entries) {
                       if (entry.key == i) continue;
-                      final newIndex = entry.key > i
-                          ? entry.key - 1
-                          : entry.key;
+                      final newIndex =
+                          entry.key > i ? entry.key - 1 : entry.key;
                       if (validBlanks.contains(newIndex)) {
                         rebuilt.add(MapEntry(newIndex, entry.value));
                       }
@@ -1899,22 +1940,25 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }),
         Row(
           children: [
-            ElevatedButton(
+            TextButton.icon(
               onPressed: () => setState(() => _sentenceSegments.add('')),
-              child: const Text('Add Text Segment'),
+              icon: const Icon(Icons.text_fields, size: 18),
+              label: const Text('Text'),
             ),
-            const SizedBox(width: 8),
-            ElevatedButton(
+            TextButton.icon(
               onPressed: () => setState(() => _sentenceSegments.add(null)),
-              child: const Text('Add Blank'),
+              icon: const Icon(Icons.space_bar, size: 18),
+              label: const Text('Blank'),
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        const Text('Word Bank', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        const Text('Word bank',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
         ...List.generate(_wordBank.length, (i) {
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
                 Expanded(
@@ -1923,18 +1967,20 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     decoration: InputDecoration(
                       labelText: 'Word ${i + 1}',
                       border: const OutlineInputBorder(),
+                      isDense: true,
                     ),
                     onChanged: (val) =>
                         setState(() => _wordBank[i]['text'] = val),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close, size: 20),
                   onPressed: () {
                     final removedId = _wordBank[i]['id'] as String;
                     setState(() {
                       _wordBank.removeAt(i);
-                      _blankMappings.removeWhere((e) => e.value == removedId);
+                      _blankMappings
+                          .removeWhere((e) => e.value == removedId);
                     });
                   },
                 ),
@@ -1942,17 +1988,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             ),
           );
         }),
-        ElevatedButton(
+        TextButton.icon(
           onPressed: () => setState(
-            () => _wordBank.add({'id': _generateWordId(), 'text': ''}),
-          ),
-          child: const Text('Add Word'),
+              () => _wordBank.add({'id': _generateWordId(), 'text': ''})),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add word'),
         ),
-        const SizedBox(height: 20),
-        const Text(
-          'Blank Mappings',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        const SizedBox(height: 16),
+        const Text('Blank mappings',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
         ..._getBlankIndices().map((blankIndex) {
           final currentMappedId = _blankMappings
               .firstWhere(
@@ -1964,40 +2009,44 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
               ? currentMappedId
               : null;
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Text('Blank $blankIndex: '),
-                const SizedBox(width: 16),
+                SizedBox(
+                  width: 72,
+                  child: Text('Blank $blankIndex',
+                      style: const TextStyle(fontSize: 13)),
+                ),
                 Expanded(
                   child: _wordBank.isEmpty
-                      ? const Text(
-                          '(Add words to bank first)',
-                          style: TextStyle(fontStyle: FontStyle.italic),
-                        )
+                      ? Text('(Add words first)',
+                          style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[600]))
                       : DropdownButtonFormField<String>(
                           value: validValue,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                           hint: const Text('Select word'),
                           items: _wordBank.map((word) {
-                            final id = word['id'] as String?;
-                            final text = word['text'] as String? ?? '';
                             return DropdownMenuItem(
-                              value: id ?? '',
-                              child: Text(text),
+                              value: word['id'] as String? ?? '',
+                              child: Text(word['text'] as String? ?? ''),
                             );
                           }).toList(),
                           onChanged: (val) {
                             setState(() {
-                              _blankMappings.removeWhere(
-                                (e) => e.key == blankIndex,
-                              );
-                              if (val != null && val.isNotEmpty)
-                                _blankMappings.add(MapEntry(blankIndex, val));
+                              _blankMappings
+                                  .removeWhere((e) => e.key == blankIndex);
+                              if (val != null && val.isNotEmpty) {
+                                _blankMappings
+                                    .add(MapEntry(blankIndex, val));
+                              }
                             });
                           },
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                          ),
                         ),
                 ),
               ],
@@ -2010,16 +2059,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
 
   Widget _buildMatchPairsFields() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Matching Pairs',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
         ...List.generate(_matchLeftControllers.length, (i) {
           return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.only(bottom: 10),
             child: Row(
               children: [
                 Expanded(
@@ -2028,146 +2071,128 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     decoration: InputDecoration(
                       labelText: 'Left ${i + 1}',
                       border: const OutlineInputBorder(),
+                      isDense: true,
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 10),
                 Expanded(
                   child: TextFormField(
                     controller: _matchRightControllers[i],
                     decoration: InputDecoration(
                       labelText: 'Right ${i + 1}',
                       border: const OutlineInputBorder(),
+                      isDense: true,
                     ),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.remove_circle),
+                  icon: const Icon(Icons.remove_circle_outline, size: 20),
                   onPressed: _matchLeftControllers.length > 1
-                      ? () {
-                          setState(() {
+                      ? () => setState(() {
                             _matchLeftControllers[i].dispose();
                             _matchRightControllers[i].dispose();
                             _matchLeftControllers.removeAt(i);
                             _matchRightControllers.removeAt(i);
-                          });
-                        }
+                          })
                       : null,
                 ),
               ],
             ),
           );
         }),
-        ElevatedButton(
+        TextButton.icon(
           onPressed: () => setState(() {
             _matchLeftControllers.add(TextEditingController());
             _matchRightControllers.add(TextEditingController());
           }),
-          child: const Text('Add Pair'),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add pair'),
         ),
       ],
     );
-  }
-
-  Widget _buildAudioSelectionInfo() {
-    if (_audioFile != null) return Text('Selected: ${_audioFile!.name}');
-    if (_existingAudioUrl != null) return const Text('Existing audio file');
-    return const Text('No audio selected');
   }
 
   Widget _buildAudioSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Audio (optional)',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(child: _buildAudioSelectionInfo()),
-                  ElevatedButton.icon(
-                    onPressed: _pickAudio,
-                    icon: const Icon(Icons.audiotrack),
-                    label: const Text('Pick Audio'),
-                  ),
-                ],
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _audioFile != null
+                    ? _audioFile!.name
+                    : (_existingAudioUrl != null
+                        ? 'Existing audio file'
+                        : 'No audio selected'),
+                style: TextStyle(
+                  color: _audioFile != null || _existingAudioUrl != null
+                      ? Colors.black87
+                      : Colors.grey[600],
+                  fontSize: 13,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-              if (_audioFile != null &&
-                  _audioDuration != null &&
-                  !_isLoadingDuration) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Trim Audio (seconds)',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            OutlinedButton.icon(
+              onPressed: _pickAudio,
+              icon: const Icon(Icons.audiotrack, size: 18),
+              label: const Text('Pick'),
+            ),
+          ],
+        ),
+        if (_audioFile != null &&
+            _audioDuration != null &&
+            !_isLoadingDuration) ...[
+          const SizedBox(height: 12),
+          Text('Trim  ·  Start ${_trimStart.toStringAsFixed(1)}s  →  '
+              'End ${_trimEnd.toStringAsFixed(1)}s'),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: _trimStart,
+                  min: 0,
+                  max: _audioDuration!,
+                  onChanged: (v) => setState(() => _trimStart = v),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Text('Start: ${_trimStart.toStringAsFixed(1)}s'),
-                          Slider(
-                            value: _trimStart,
-                            min: 0,
-                            max: _audioDuration!,
-                            onChanged: (val) =>
-                                setState(() => _trimStart = val),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Text('End: ${_trimEnd.toStringAsFixed(1)}s'),
-                          Slider(
-                            value: _trimEnd,
-                            min: 0,
-                            max: _audioDuration!,
-                            onChanged: (val) => setState(() => _trimEnd = val),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              ),
+              Expanded(
+                child: Slider(
+                  value: _trimEnd,
+                  min: 0,
+                  max: _audioDuration!,
+                  onChanged: (v) => setState(() => _trimEnd = v),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _isPreviewPlaying ? null : _previewAudio,
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Preview'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: !_isPreviewPlaying ? null : _stopPreview,
-                        icon: const Icon(Icons.stop),
-                        label: const Text('Stop'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (_isLoadingDuration)
-                const Center(child: CircularProgressIndicator()),
+              ),
             ],
           ),
-        ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isPreviewPlaying ? null : _previewAudio,
+                  icon: const Icon(Icons.play_arrow, size: 18),
+                  label: const Text('Preview'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: !_isPreviewPlaying ? null : _stopPreview,
+                  icon: const Icon(Icons.stop, size: 18),
+                  label: const Text('Stop'),
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (_isLoadingDuration)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
       ],
     );
   }
@@ -2177,100 +2202,95 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     final labels = ['Easy', 'Medium', 'Hard'];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Difficulty & Level',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        ...List.generate(3, (index) {
-          final diff = difficulties[index];
-          final key = diff.name;
-          final existing = _existingLevels[key] ?? <int>{};
-          final sorted = existing.toList()..sort();
-          final isSelected = _selectedDifficulty == diff;
-          final maxLevel = sorted.isEmpty ? 0 : sorted.last;
-          final nextFree = maxLevel + 1;
-          final freeLevels = _freeLevelsFor(key).take(10).toList();
+      children: List.generate(3, (index) {
+        final diff = difficulties[index];
+        final key = diff.name;
+        final existing = _existingLevels[key] ?? <int>{};
+        final sorted = existing.toList()..sort();
+        final isSelected = _selectedDifficulty == diff;
+        final maxLevel = sorted.isEmpty ? 0 : sorted.last;
+        final nextFree = maxLevel + 1;
+        final freeLevels = _freeLevelsFor(key).take(8).toList();
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isSelected ? Colors.blue : Colors.grey.shade300,
-              ),
-              borderRadius: BorderRadius.circular(8),
-              color: isSelected ? Colors.blue.shade50 : null,
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isSelected ? _primary : Colors.grey.shade300,
+              width: isSelected ? 1.5 : 1,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Radio<Difficulty>(
-                      value: diff,
-                      groupValue: _selectedDifficulty,
-                      onChanged: (val) {
-                        setState(() {
-                          _selectedDifficulty = val;
-                          // For edits, keep the current level. For new, default to next free.
-                          if (widget.question == null) {
-                            _nextLevel = nextFree;
-                            _levelController.text = nextFree.toString();
-                          }
-                        });
-                      },
-                    ),
-
-                    Expanded(
-                      child: Text(
-                        '${labels[index]}  •  ${existing.length} '
-                        'level${existing.length == 1 ? '' : 's'}',
-                      ),
-                    ),
-                  ],
-                ),
-                if (sorted.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 40, top: 2),
+            borderRadius: BorderRadius.circular(10),
+            color: isSelected ? _primary.withOpacity(0.06) : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Radio<Difficulty>(
+                    value: diff,
+                    groupValue: _selectedDifficulty,
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedDifficulty = val;
+                        if (widget.question == null) {
+                          _nextLevel = nextFree;
+                          _levelController.text = nextFree.toString();
+                        }
+                      });
+                    },
+                    activeColor: _primary,
+                  ),
+                  Expanded(
                     child: Text(
-                      'Existing: ${sorted.join(", ")}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                    ),
-                  ),
-                if (isSelected)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 40, top: 6, right: 4),
-                    child: TextFormField(
-                      controller: _levelController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Level number',
-                        helperText: freeLevels.isEmpty
-                            ? 'No free levels'
-                            : 'Free: ${freeLevels.join(", ")}',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
+                      '${labels[index]}  ·  ${existing.length} level${existing.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w400,
                       ),
-                      onChanged: (v) =>
-                          _nextLevel = int.tryParse(v) ?? _nextLevel,
                     ),
                   ),
-              ],
-            ),
-          );
-        }),
-      ],
+                ],
+              ),
+              if (sorted.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 40, bottom: 4),
+                  child: Text(
+                    'Used: ${sorted.join(", ")}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ),
+              if (isSelected)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(40, 0, 8, 6),
+                  child: TextFormField(
+                    controller: _levelController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Level number',
+                      helperText: freeLevels.isEmpty
+                          ? 'No free levels nearby'
+                          : 'Free: ${freeLevels.join(", ")}',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) =>
+                        _nextLevel = int.tryParse(v) ?? _nextLevel,
+                  ),
+                ),
+            ],
+          ),
+        );
+      }),
     );
   }
 
   List<int> _freeLevelsFor(String difficultyKey) {
     final existing = _existingLevels[difficultyKey] ?? <int>{};
-    final maxLevel = existing.isEmpty
-        ? 0
-        : existing.reduce((a, b) => a > b ? a : b);
+    final maxLevel =
+        existing.isEmpty ? 0 : existing.reduce((a, b) => a > b ? a : b);
     final limit = maxLevel + 5;
     final result = <int>[];
     for (var i = 1; i <= limit; i++) {
@@ -2279,341 +2299,321 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     return result;
   }
 
-  String _getContextLabel() {
-    if (widget.isDailyChallenge) {
-      return 'Daily Challenge';
-    } else if (_isLanguageMode) {
-      // Determine language name
-      String langName = '?';
-      if (widget.languageName != null) {
-        langName = widget.languageName!;
-      } else if (_selectedLanguageId != null) {
-        final found = _languages.cast<Map<String, dynamic>>().firstWhere(
-          (l) => l['id'] == _selectedLanguageId,
-          orElse: () => {},
-        );
-        if (found.isNotEmpty) langName = found['name'] as String;
-      }
-
-      // Determine theme name
-      String themeName = '?';
-      if (widget.themeName != null) {
-        themeName = widget.themeName!;
-      } else if (_selectedThemeId != null) {
-        final found = _themes.firstWhere(
-          (t) => t.id == _selectedThemeId,
-          orElse: () =>
-              LanguageTheme(id: '', name: '', languageTypeId: '', position: 0),
-        );
-        if (found.id.isNotEmpty) themeName = found.name;
-      }
-      return 'Language => $langName :) Theme => $themeName';
-    } else {
-      final category = widget.initialCategory ?? _selectedCategory;
-      return 'Quiz Category: $category';
-    }
-  }
-
-  Future<void> _updateNextPosition() async {
-    if (widget.isDailyChallenge) {
-      final next = await _dailyService.getNextPosition();
-      setState(() {
-        _position = next;
-        _positionController.text = _position.toString(); // <--- ADD THIS
-      });
-    } else if (_isLanguageMode && _selectedThemeId != null) {
-      final max = await _langService.getMaxPositionForTheme(_selectedThemeId!);
-      setState(() {
-        _position = max + 1;
-        _positionController.text = _position.toString();
-      });
-    }
-  }
-
-  Future<void> _openCsvImport() async {
-    CsvImportMode mode;
-    if (widget.isDailyChallenge) {
-      mode = CsvImportMode.daily;
-    } else if (_isLanguageMode) {
-      mode = CsvImportMode.language;
-    } else {
-      mode = CsvImportMode.adventure;
-    }
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CsvQuestionImporter(
-          mode: mode,
-          category: _selectedCategory,
-          difficulty: _selectedDifficulty,
-          languageId: _selectedLanguageId,
-          themeId: _selectedThemeId,
-          startingPosition: _position,
-          dailyChallengeId: DailyChallengeService.activeDailyChallengeId,
+  Widget _buildStickyQueueBar() {
+    if (!_queueActive) return const SizedBox.shrink();
+    return Material(
+      elevation: 8,
+      color: Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            children: [
+              OutlinedButton(
+                onPressed:
+                    (_isLoading || _queueIndex <= 0) ? null : _previousQueueItem,
+                child: const Icon(Icons.chevron_left),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _isLoading ? null : _saveQuestion,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primary,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  icon: const Icon(Icons.check),
+                  label: Text(
+                    _queueIndex + 1 < _queue.length
+                        ? 'Save & next'
+                        : 'Save & finish',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _isLoading ? null : _skipQueueItem,
+                child: const Text('Skip'),
+              ),
+            ],
+          ),
         ),
       ),
     );
-
-    // Refresh difficulty counts / next position after import
-    if (mounted) {
-      await _loadExistingLevels();
-      await _updateNextPosition();
-    }
   }
 
-  Widget? _buildImagePreview(int index) {
-    // 1. Newly picked image (works on web and mobile)
-    if (index < _selectedImageBytes.length &&
-        _selectedImageBytes[index] != null) {
-      return Image.memory(
-        _selectedImageBytes[index]!,
-        width: 80,
-        height: 80,
-        fit: BoxFit.cover,
-      );
-    }
-    // 2. Existing URL from the question being edited
-    final existingUrl = widget.question?.imageUrls?[index.toString()];
-    if (existingUrl != null && existingUrl.isNotEmpty) {
-      return Image.network(
-        existingUrl,
-        width: 80,
-        height: 80,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 32),
-      );
-    }
-    return null;
-  }
+  // ─────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final title = widget.isDailyChallenge
+        ? 'Daily Question'
+        : (_isLanguageMode ? 'Language Question' : 'Question');
+
     return Scaffold(
+      backgroundColor: _surface,
       appBar: AppBar(
-        title: Text(
-          widget.isDailyChallenge
-              ? 'Daily Question'
-              : (_isLanguageMode ? 'Language Question' : 'Question'),
-        ),
+        title: Text(title),
         backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF1E293B),
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         actions: [
+          if (!_queueActive) ...[
+            IconButton(
+              icon: const Icon(Icons.playlist_add_check_rounded),
+              tooltip: 'Review queue from CSV / Excel',
+              onPressed: (_isLoading ||
+                      widget.question != null ||
+                      widget.languageQuestion != null ||
+                      widget.dailyQuestion != null ||
+                      widget.isDailyChallenge)
+                  ? null
+                  : _startReviewQueue,
+            ),
+            IconButton(
+              icon: const Icon(Icons.upload_file_rounded),
+              tooltip: 'Import CSV',
+              onPressed: _isLoading ? null : _openCsvImport,
+            ),
+          ],
           IconButton(
-            icon: const Icon(Icons.playlist_add_check),
-            tooltip: 'Review queue from CSV',
-            onPressed:
-                (_isLoading ||
-                    widget.question != null ||
-                    widget.languageQuestion != null ||
-                    widget.dailyQuestion != null ||
-                    widget.isDailyChallenge)
-                ? null
-                : _startReviewQueue,
-          ),
-          IconButton(
-            icon: const Icon(Icons.upload_file),
-            tooltip: 'Import CSV',
-            onPressed: _isLoading ? null : _openCsvImport,
-          ),
-          IconButton(
-            icon: const Icon(Icons.preview),
+            icon: const Icon(Icons.visibility_outlined),
+            tooltip: 'Preview',
             onPressed: _isLoading ? null : _showPreview,
           ),
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _isLoading ? null : _saveQuestion,
-          ),
+          if (!_queueActive)
+            IconButton(
+              icon: const Icon(Icons.save_rounded),
+              tooltip: 'Save',
+              onPressed: _isLoading ? null : _saveQuestion,
+            ),
+          const SizedBox(width: 4),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: KeyedSubtree(
-                  key: ValueKey(_formVersion),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_queueActive) _buildQueueBanner(),
-                      // Top context indicator
-                      Container(
-                        width: 280,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: AutoScrollText(
-                          text: _getContextLabel(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
+          : Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    child: Form(
+                      key: _formKey,
+                      child: KeyedSubtree(
+                        key: ValueKey(_formVersion),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_queueActive) _buildQueueBanner(),
+                            _buildContextChip(),
+                            const SizedBox(height: 14),
 
-                      // Position (Daily Challenge or Language)
-                      if (widget.isDailyChallenge || _isLanguageMode) ...[
-                        TextFormField(
-                          controller: _positionController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: widget.isDailyChallenge
-                                ? 'Position in Daily Challenge'
-                                : 'Position in Theme',
-                            border: OutlineInputBorder(),
-                            helperText: 'Lowest number appears first',
-                          ),
-                          onChanged: (v) => _position = int.tryParse(v) ?? 1,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return 'Position is required';
-                            }
-                            final pos = int.tryParse(v);
-                            if (pos == null) return 'Must be a number';
-                            if (pos < 1) return 'Position must be at least 1';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                      ],
+                            // Position
+                            if (widget.isDailyChallenge ||
+                                _isLanguageMode)
+                              _sectionCard(
+                                title: 'Position',
+                                icon: Icons.format_list_numbered_rounded,
+                                children: [
+                                  TextFormField(
+                                    controller: _positionController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: widget.isDailyChallenge
+                                          ? 'Position in Daily Challenge'
+                                          : 'Position in Theme',
+                                      border: const OutlineInputBorder(),
+                                      isDense: true,
+                                      helperText:
+                                          'Lowest number appears first',
+                                    ),
+                                    onChanged: (v) =>
+                                        _position = int.tryParse(v) ?? 1,
+                                    validator: (v) {
+                                      if (v == null || v.isEmpty) {
+                                        return 'Required';
+                                      }
+                                      final pos = int.tryParse(v);
+                                      if (pos == null) return 'Must be a number';
+                                      if (pos < 1) return 'Must be ≥ 1';
+                                      return null;
+                                    },
+                                  ),
+                                ],
+                              ),
 
-                      // Difficulty (general only)
-                      if (!widget.isDailyChallenge && !_isLanguageMode) ...[
-                        _buildDifficultySelector(),
-                        const SizedBox(height: 16),
-                      ],
+                            // Difficulty
+                            if (!widget.isDailyChallenge &&
+                                !_isLanguageMode)
+                              _sectionCard(
+                                title: 'Difficulty & Level',
+                                icon: Icons.trending_up_rounded,
+                                children: [_buildDifficultySelector()],
+                              ),
 
-                      // Type dropdown
-                      _buildDropdown(
-                        'Type',
-                        QuestionType.values.map((e) => e.displayName).toList(),
-                        _selectedType.index,
-                        (val) {
-                          setState(() {
-                            _selectedType = QuestionType.values[val!];
-                            _updateOptionsForType();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ---- Scenario fields (general only) ----
-                      if (!widget.isDailyChallenge && !_isLanguageMode) ...[
-                        TextFormField(
-                          controller: _scenarioController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'Scenario (optional)',
-                            hintText: 'E.g You are in a taxi. The driver asks…',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _wrongConsequenceController,
-                          maxLines: 2,
-                          decoration: const InputDecoration(
-                            labelText: 'Wrong Consequence (optional)',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _culturalContextController,
-                          maxLines: 2,
-                          decoration: const InputDecoration(
-                            labelText: 'Cultural Context (optional)',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Question field
-                      TextFormField(
-                        controller: _questionController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Question',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (v) =>
-                            v?.isEmpty ?? true ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Type-specific fields
-                      if (_selectedType == QuestionType.imageChoice)
-                        _buildImageChoiceFields(),
-                      if (_selectedType == QuestionType.dragAndDrop)
-                        _buildDragAndDropFields(),
-                      if (_selectedType == QuestionType.textInput)
-                        _buildTextInputFields(),
-                      if (_selectedType == QuestionType.audioGuess)
-                        _buildTextInputFields(),
-                      if (_selectedType == QuestionType.fillBlank)
-                        _buildFillBlankFields(),
-                      if (_selectedType == QuestionType.matchPairs)
-                        _buildMatchPairsFields(),
-                      if (_selectedType == QuestionType.multipleChoice ||
-                          _selectedType == QuestionType.trueFalse)
-                        _buildOptionsFields(),
-                      const SizedBox(height: 16),
-
-                      // Audio
-                      _buildAudioSection(),
-                      const SizedBox(height: 16),
-
-                      // Hint/Explanation
-                      TextFormField(
-                        controller: _explanationController,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Hint/Explanation',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Points
-                      TextFormField(
-                        initialValue: _points.toString(),
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Points',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (v) => _points = int.tryParse(v) ?? 10,
-                      ),
-
-                      if (_queueActive) ...[
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isLoading ? null : _saveQuestion,
-                            icon: const Icon(Icons.check),
-                            label: Text(
-                              _queueIndex + 1 < _queue.length
-                                  ? 'Add & load next'
-                                  : 'Add & finish',
+                            // Type + Question
+                            _sectionCard(
+                              title: 'Question',
+                              icon: Icons.help_outline_rounded,
+                              children: [
+                                _buildTypeSelector(),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _questionController,
+                                  maxLines: 3,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Question text',
+                                    border: OutlineInputBorder(),
+                                    alignLabelWithHint: true,
+                                  ),
+                                  validator: (v) =>
+                                      v?.isEmpty ?? true ? 'Required' : null,
+                                ),
+                              ],
                             ),
-                          ),
+
+                            // Scenario (general only)
+                            if (!widget.isDailyChallenge &&
+                                !_isLanguageMode)
+                              _sectionCard(
+                                title: 'Context (optional)',
+                                icon: Icons.menu_book_rounded,
+                                children: [
+                                  TextFormField(
+                                    controller: _scenarioController,
+                                    maxLines: 2,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Scenario',
+                                      hintText:
+                                          'e.g. You are in a taxi. The driver asks…',
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                      alignLabelWithHint: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: _wrongConsequenceController,
+                                    maxLines: 2,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Wrong consequence',
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                      alignLabelWithHint: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: _culturalContextController,
+                                    maxLines: 2,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Cultural context',
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                      alignLabelWithHint: true,
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                            // Type-specific answers
+                            _sectionCard(
+                              title: 'Answer',
+                              icon: Icons.check_circle_outline_rounded,
+                              children: [
+                                if (_selectedType == QuestionType.imageChoice)
+                                  _buildImageChoiceFields(),
+                                if (_selectedType == QuestionType.dragAndDrop)
+                                  _buildDragAndDropFields(),
+                                if (_selectedType == QuestionType.textInput ||
+                                    _selectedType == QuestionType.audioGuess)
+                                  _buildTextInputFields(),
+                                if (_selectedType == QuestionType.fillBlank)
+                                  _buildFillBlankFields(),
+                                if (_selectedType == QuestionType.matchPairs)
+                                  _buildMatchPairsFields(),
+                                if (_selectedType ==
+                                        QuestionType.multipleChoice ||
+                                    _selectedType == QuestionType.trueFalse)
+                                  _buildOptionsFields(),
+                              ],
+                            ),
+
+                            // Audio
+                            _sectionCard(
+                              title: 'Audio (optional)',
+                              icon: Icons.graphic_eq_rounded,
+                              children: [_buildAudioSection()],
+                            ),
+
+                            // Hint + Points
+                            _sectionCard(
+                              title: 'Details',
+                              icon: Icons.info_outline_rounded,
+                              children: [
+                                TextFormField(
+                                  controller: _explanationController,
+                                  maxLines: 2,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Hint / Explanation',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    alignLabelWithHint: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  initialValue: _points.toString(),
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Points',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (v) =>
+                                      _points = int.tryParse(v) ?? 10,
+                                ),
+                              ],
+                            ),
+
+                            if (!_queueActive) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 50,
+                                child: FilledButton.icon(
+                                  onPressed:
+                                      _isLoading ? null : _saveQuestion,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _primary,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.save_rounded),
+                                  label: const Text(
+                                    'Save question',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 24),
+                          ],
                         ),
-                      ],
-                    ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                _buildStickyQueueBar(),
+              ],
             ),
     );
   }

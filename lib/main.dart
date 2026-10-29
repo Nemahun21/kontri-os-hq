@@ -10,7 +10,9 @@ void main() async {
   await Supabase.initialize(
     url: 'https://ibofeppwhmyxaychgcjq.supabase.co',
     anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlib2ZlcHB3aG15eGF5Y2hnY2pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxODUxODMsImV4cCI6MjA4Nzc2MTE4M30.Q6FeUQzdMbN5wheyLzEkumUussrMa1C0CV4J6LsjB70",
-    authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.pkce,
+      autoRefreshToken: true),
   );
 
   if (!kIsWeb) {
