@@ -404,17 +404,18 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     child: const Text('Forgot password?'),
   ),
 ),
-// const SizedBox(height: 8),
-//           FilledButton(
-//             onPressed: _isLoading ? null : _signInWithEmail,
-//             child: _isLoading
-//                 ? const SizedBox(
-//                     height: 22,
-//                     width: 22,
-//                     child: CircularProgressIndicator(strokeWidth: 2),
-//                   )
-//                 : const Text('Sign in'),
-//           ),
+const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _isLoading ? null : _signInWithEmail,
+            child: _isLoading
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Sign in'),
+          ),
+
 //           const SizedBox(height: 12),
 //           OutlinedButton.icon(
 //             onPressed: (_isLoading || !_googleReady)
