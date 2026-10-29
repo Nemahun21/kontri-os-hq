@@ -348,7 +348,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Admin Login',
+            'Kontrios Admin',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
@@ -404,26 +404,26 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     child: const Text('Forgot password?'),
   ),
 ),
-const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _isLoading ? null : _signInWithEmail,
-            child: _isLoading
-                ? const SizedBox(
-                    height: 22,
-                    width: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Sign in'),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: (_isLoading || !_googleReady)
-                ? null
-                : _handleGoogleSignIn,
-            icon: const Icon(Icons.g_mobiledata, size: 28),
-            label: const Text('Google (optional)'),
-          ),
-          const SizedBox(height: 20),
+// const SizedBox(height: 8),
+//           FilledButton(
+//             onPressed: _isLoading ? null : _signInWithEmail,
+//             child: _isLoading
+//                 ? const SizedBox(
+//                     height: 22,
+//                     width: 22,
+//                     child: CircularProgressIndicator(strokeWidth: 2),
+//                   )
+//                 : const Text('Sign in'),
+//           ),
+//           const SizedBox(height: 12),
+//           OutlinedButton.icon(
+//             onPressed: (_isLoading || !_googleReady)
+//                 ? null
+//                 : _handleGoogleSignIn,
+//             icon: const Icon(Icons.g_mobiledata, size: 28),
+//             label: const Text('Google (optional)'),
+//           ),
+//           const SizedBox(height: 20),
           TextButton(
             onPressed: _isLoading
                 ? null
