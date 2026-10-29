@@ -8,10 +8,10 @@ import 'package:kohntri_os_hq/screens/admin/widgets/action_needed_card.dart';
 import 'package:kohntri_os_hq/screens/admin/widgets/live_feed.dart';
 import 'package:kohntri_os_hq/screens/admin/widgets/pulse_strip.dart';
 import 'package:kohntri_os_hq/screens/admin/widgets/top_players_card.dart';
+import 'package:kohntri_os_hq/screens/auth/admin_approvals_screen.dart';
 import 'package:kohntri_os_hq/screens/auth/login_screen.dart';
 import 'package:kohntri_os_hq/services/admin_stats_service.dart';
 import 'package:kohntri_os_hq/services/cache_service.dart';
-import 'package:kohntri_os_hq/services/daily_challenge_service.dart';
 import 'package:kohntri_os_hq/services/language_question_service.dart';
 import 'package:kohntri_os_hq/services/question_service.dart';
 import 'package:kohntri_os_hq/utils/connectivity_helper.dart';
@@ -48,7 +48,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   final QuestionService _questionService = QuestionService();
   final LanguageQuestionService _langService = LanguageQuestionService();
-  final DailyChallengeService _dailyService = DailyChallengeService();
 
   Map<String, int> _categoryCounts = {};
   int _totalQuestions = 0;
@@ -335,7 +334,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     const SizedBox(height: 20),
                     AdminSectionTitle('Manage'),
                     const SizedBox(height: 12),
-                    ManageActionsRow(
+                                      ManageActionsRow(
                       onHub: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const ContentHubScreen()),
@@ -349,7 +348,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         MaterialPageRoute(builder: (_) => const UserLookupScreen()),
                       ),
                     ),
-                  
+
+                    if (_adminData?['role'] == 'super_admin') ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(
+                            Icons.admin_panel_settings_outlined,
+                            size: 20,
+                          ),
+                          label: const Text('Admin requests'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AdminColors.blue,
+                            side: BorderSide(
+                              color: AdminColors.blue.withValues(alpha: 0.4),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AdminApprovalsScreen(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 16),
                   ],
                 ],

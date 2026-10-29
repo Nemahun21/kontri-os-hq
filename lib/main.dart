@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:kohntri_os_hq/utils/splash_screen.dart';
+import 'package:kohntri_os_hq/screens/auth/set_new_password_screen.dart';
 import 'package:kohntri_os_hq/services/sync_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -12,13 +13,19 @@ void main() async {
     anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlib2ZlcHB3aG15eGF5Y2hnY2pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxODUxODMsImV4cCI6MjA4Nzc2MTE4M30.Q6FeUQzdMbN5wheyLzEkumUussrMa1C0CV4J6LsjB70",
     authOptions: const FlutterAuthClientOptions(
       authFlowType: AuthFlowType.pkce,
-      autoRefreshToken: true),
+      autoRefreshToken: true,
+    ),
   );
+
+  bool isRecoveryLink = false;
 
   if (!kIsWeb) {
     await SyncService().syncPendingOperations();
   } else {
-    // Handle OAuth callback on web
+    // Detect recovery marker BEFORE exchangeCodeForSession consumes the code
+    isRecoveryLink = Uri.base.queryParameters['action'] == 'reset';
+
+    // Handle OAuth callback + recovery callback on web
     final code = Uri.base.queryParameters['code'];
     if (code != null) {
       try {
@@ -28,18 +35,16 @@ void main() async {
       }
     }
   }
-   // Handle OAuth callback on web
- 
 
-  runApp(const MyApp());
+  runApp(MyApp(showPasswordReset: isRecoveryLink));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool showPasswordReset;
+  const MyApp({super.key, this.showPasswordReset = false});
 
   @override
   Widget build(BuildContext context) {
-    // Also skip connectivity sync on web
     if (!kIsWeb) {
       Connectivity().onConnectivityChanged.listen((
         List<ConnectivityResult> result,
@@ -58,7 +63,9 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFF8F9FA),
       ),
       debugShowCheckedModeBanner: false,
-      home: const SplashScreen(),
+      home: showPasswordReset
+          ? const SetNewPasswordScreen()
+          : const SplashScreen(),
     );
   }
 }
