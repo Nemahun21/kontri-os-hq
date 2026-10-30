@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/screens/admin/admin_metrics_screen.dart';
+import 'package:kohntri_os_hq/screens/admin/all_user_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/content_hub_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/user_lookup_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/widgets/action_needed_card.dart';
@@ -10,6 +11,8 @@ import 'package:kohntri_os_hq/screens/admin/widgets/pulse_strip.dart';
 import 'package:kohntri_os_hq/screens/admin/widgets/top_players_card.dart';
 import 'package:kohntri_os_hq/screens/auth/admin_approvals_screen.dart';
 import 'package:kohntri_os_hq/screens/auth/login_screen.dart';
+import 'package:kohntri_os_hq/screens/categories_list_screen.dart';
+import 'package:kohntri_os_hq/screens/languages_list_screen.dart';
 import 'package:kohntri_os_hq/services/admin_stats_service.dart';
 import 'package:kohntri_os_hq/services/cache_service.dart';
 import 'package:kohntri_os_hq/services/language_question_service.dart';
@@ -64,7 +67,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _loadCommandCentre();
     _loadSeries();
     _loadStats();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) => _refreshDashboard());
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _refreshDashboard(),
+    );
   }
 
   @override
@@ -156,7 +162,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       setState(() {
         _totalLangQuestions = langTotal;
         _categoryCounts = counts;
-        _totalQuestions = counts.values.fold<int>(0, (sum, count) => sum + count);
+        _totalQuestions = counts.values.fold<int>(
+          0,
+          (sum, count) => sum + count,
+        );
         _isLoading = false;
       });
     } catch (error) {
@@ -180,7 +189,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void _openMetrics(String metric, String title) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => AdminMetricsScreen(metric: metric, title: title)),
+      MaterialPageRoute(
+        builder: (_) => AdminMetricsScreen(metric: metric, title: title),
+      ),
     );
   }
 
@@ -194,9 +205,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Logout failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Logout failed: $error')));
     }
   }
 
@@ -225,11 +236,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     showEmail: width >= 400,
                     onUsers: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const UserLookupScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const UserLookupScreen(),
+                      ),
                     ),
                     onContent: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const UserLookupScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const UserLookupScreen(),
+                      ),
                     ),
                     onRefresh: _loadCommandCentre,
                     onLogout: _logout,
@@ -243,7 +258,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.error_outline, color: AdminColors.red),
+                            const Icon(
+                              Icons.error_outline,
+                              color: AdminColors.red,
+                            ),
                             const SizedBox(height: 8),
                             Text(_statsError!, style: AdminText.body),
                             const SizedBox(height: 12),
@@ -268,19 +286,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       onDauTap: () => _openMetrics('dau', 'Active Today'),
                       onNewTodayTap: () => _openMetrics('signups', 'New Today'),
                       onAttemptsTap: () => _openMetrics('attempts', 'Attempts'),
-                      onTotalUsersTap: () => _openMetrics('total_users', 'Total Users'),
+                      onTotalUsersTap: () =>
+                          _openMetrics('total_users', 'Total Users'),
                     ),
                     const SizedBox(height: 12),
-                    if (_stats!.queues.reportsNew > 0 || _stats!.queues.contribsNew > 0) ...[
+                    if (_stats!.queues.reportsNew > 0 ||
+                        _stats!.queues.contribsNew > 0) ...[
                       ActionNeededCard(
                         queues: _stats!.queues,
                         onReportsTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const ContentHubScreen(initialTab: 2)),
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const ContentHubScreen(initialTab: 2),
+                          ),
                         ),
                         onContribsTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => const ContentHubScreen(initialTab: 3)),
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const ContentHubScreen(initialTab: 3),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -291,11 +317,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(flex: 5, child: LiveFeed(events: _stats!.recent)),
+                          Expanded(
+                            flex: 5,
+                            child: LiveFeed(events: _stats!.recent),
+                          ),
                           const SizedBox(width: 12),
-                          Expanded(flex: 3, child: SignInDonutCard(signIn: _stats!.signIn)),
+                          Expanded(
+                            flex: 3,
+                            child: SignInDonutCard(signIn: _stats!.signIn),
+                          ),
                           const SizedBox(width: 12),
-                          Expanded(flex: 4, child: CategoriesBarCard(categories: _stats!.categoriesToday)),
+                          Expanded(
+                            flex: 4,
+                            child: CategoriesBarCard(
+                              categories: _stats!.categoriesToday,
+                            ),
+                          ),
                         ],
                       )
                     else if (!mobile)
@@ -305,9 +342,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           const SizedBox(height: 12),
                           Row(
                             children: [
-                              Expanded(child: SignInDonutCard(signIn: _stats!.signIn)),
+                              Expanded(
+                                child: SignInDonutCard(signIn: _stats!.signIn),
+                              ),
                               const SizedBox(width: 12),
-                              Expanded(child: CategoriesBarCard(categories: _stats!.categoriesToday)),
+                              Expanded(
+                                child: CategoriesBarCard(
+                                  categories: _stats!.categoriesToday,
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -319,7 +362,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           const SizedBox(height: 12),
                           SignInDonutCard(signIn: _stats!.signIn),
                           const SizedBox(height: 12),
-                          CategoriesBarCard(categories: _stats!.categoriesToday),
+                          CategoriesBarCard(
+                            categories: _stats!.categoriesToday,
+                          ),
                         ],
                       ),
                     const SizedBox(height: 12),
@@ -330,22 +375,55 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       language: _totalLangQuestions,
                       categories: _categoryCounts.length,
                       users: _stats!.pulse.totalUsers,
+                      // onAdventureTap: () => Navigator.push(
+                      //   context,
+                      //   MaterialPageRoute(
+                      //     builder: (_) => const ContentHubScreen(initialTab: 0),
+                      //   ),
+                      // ),
+                      onCategoriesTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CategoriesListScreen(
+                            categoryCounts: _categoryCounts,
+                          ),
+                        ),
+                      ),
+                      onLanguageTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LanguagesListScreen(),
+                        ),
+                      ),
+                      onUsersTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AllUsersScreen(),
+                        ),
+                      ),
                     ),
+                    
                     const SizedBox(height: 20),
                     AdminSectionTitle('Manage'),
                     const SizedBox(height: 12),
-                                      ManageActionsRow(
+                    ManageActionsRow(
                       onHub: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ContentHubScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const ContentHubScreen(),
+                        ),
                       ),
                       onUsers: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const UserLookupScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const UserLookupScreen(),
+                        ),
                       ),
                       onContent: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const UserLookupScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const UserLookupScreen(),
+                        ),
                       ),
                     ),
 

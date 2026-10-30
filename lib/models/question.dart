@@ -113,37 +113,34 @@ class Question {
     this.culturalContext,
   });
 
- factory Question.fromSupabase(Map<String, dynamic> json) {
-  return Question(
-    id: json['id']?.toString() ?? '',
-    question: json['question'] ?? '',
-    options: List<String>.from(json['options'] ?? []),
-    correctAnswerIndex:
-        (json['correct_answer_index'] as num?)?.toInt() ?? 0,
-    category: json['category'] ?? 'General',
-    explanation: json['explanation'] ?? '',
-    type: QuestionType.fromString(json['type']),
-    imageUrls: json['image_urls'] != null
-        ? Map<String, String>.from(json['image_urls'])
-        : null,
-    points: (json['points'] as num?)?.toInt() ?? 10,
-    timeLimit: json['time_limit'],
-    typeData: json['type_data'] as Map<String, dynamic>?,
-    difficulty: Difficulty.values.firstWhere(
-      (e) => e.name == (json['difficulty'] ?? 'medium'),
-      orElse: () => Difficulty.medium,
-    ),
-    language: json['language'],
-    themeId: json['theme_id'],
-    level: json['level'] != null
-        ? (json['level'] as num).toInt()
-        : null,
-    scenario: json['scenario'] as String?,
-    wrongConsequence: json['wrong_consequence'] as String?,
-    culturalContext: json['cultural_context'] as String?,
-  );
-}
-  
+  factory Question.fromSupabase(Map<String, dynamic> json) {
+    return Question(
+      id: json['id']?.toString() ?? '',
+      question: json['question'] ?? '',
+      options: List<String>.from(json['options'] ?? []),
+      correctAnswerIndex: (json['correct_answer_index'] as num?)?.toInt() ?? 0,
+      category: json['category']?.toString() ?? 'Uncategorized',
+      explanation: json['explanation'] ?? '',
+      type: QuestionType.fromString(json['type']),
+      imageUrls: json['image_urls'] != null
+          ? Map<String, String>.from(json['image_urls'])
+          : null,
+      points: (json['points'] as num?)?.toInt() ?? 10,
+      timeLimit: json['time_limit'],
+      typeData: json['type_data'] as Map<String, dynamic>?,
+      difficulty: Difficulty.values.firstWhere(
+        (e) => e.name == (json['difficulty'] ?? 'medium'),
+        orElse: () => Difficulty.medium,
+      ),
+      language: json['language'],
+      themeId: json['theme_id'],
+      level: json['level'] != null ? (json['level'] as num).toInt() : null,
+      scenario: json['scenario'] as String?,
+      wrongConsequence: json['wrong_consequence'] as String?,
+      culturalContext: json['cultural_context'] as String?,
+    );
+  }
+
   Map<String, dynamic> toSupabase() {
     return {
       'question': question,

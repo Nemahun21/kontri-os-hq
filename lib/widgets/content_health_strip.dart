@@ -1,67 +1,138 @@
 import 'package:flutter/material.dart';
-
-import '../admin_theme.dart';
+// adjust imports to your theme/text styles
+import '../../admin_theme.dart';
 
 class ContentHealthStrip extends StatelessWidget {
+  final int adventure;
+  final int language;
+  final int categories;
+  final int users;
+
+  final VoidCallback? onAdventureTap;
+  final VoidCallback? onLanguageTap;
+  final VoidCallback? onCategoriesTap;
+  final VoidCallback? onUsersTap;
+
   const ContentHealthStrip({
     super.key,
     required this.adventure,
     required this.language,
     required this.categories,
     required this.users,
+    this.onAdventureTap,
+    this.onLanguageTap,
+    this.onCategoriesTap,
+    this.onUsersTap,
   });
-
-  final int adventure;
-  final int language;
-  final int categories;
-  final int users;
 
   @override
   Widget build(BuildContext context) {
-    final tiles = <_MiniTileData>[
-      _MiniTileData(label: 'Adventure Q', value: adventure.toString(), color: AdminColors.blue),
-      _MiniTileData(label: 'Language Q', value: language.toString(), color: AdminColors.blue2),
-      _MiniTileData(label: 'Categories', value: categories.toString(), color: AdminColors.green),
-      _MiniTileData(label: 'Users', value: users.toString(), color: AdminColors.purple),
-    ];
-
     return Row(
-      children: tiles.map((tile) {
-        return Expanded(
-          child: Container(
-            margin: const EdgeInsets.only(right: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AdminColors.card,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AdminColors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(tile.label, style: AdminText.caption),
-                const SizedBox(height: 6),
-                Text(
-                  tile.value,
-                  style: TextStyle(
-                    color: tile.color,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
+      children: [
+        Expanded(
+          child: _MetricTile(
+            label: 'Categories',
+            value: categories,
+            icon: Icons.category_outlined,
+            onTap: onCategoriesTap,
           ),
-        );
-      }).toList(),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _MetricTile(
+            label: 'Languages',
+            value: language,
+            icon: Icons.language,
+            onTap: onLanguageTap,
+          ),
+        ),
+        const SizedBox(width: 8),
+        
+        const SizedBox(width: 8),
+        Expanded(
+          child: _MetricTile(
+            label: 'Users',
+            value: users,
+            icon: Icons.people_outline,
+            onTap: onUsersTap,
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _MiniTileData {
-  const _MiniTileData({required this.label, required this.value, required this.color});
-
+class _MetricTile extends StatelessWidget {
   final String label;
-  final String value;
-  final Color color;
+  final int value;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  const _MetricTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: enabled ? AdminColors.blue : Colors.grey,
+                  ),
+                  const Spacer(),
+                  if (enabled)
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Colors.grey.shade400,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$value',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

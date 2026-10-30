@@ -187,7 +187,7 @@ Future<void> _pickCsv() async {
       correctAnswerIndex: correct,
       category: (row['category']?.isNotEmpty ?? false)
           ? row['category']!
-          : (widget.category ?? 'General'),
+          : (widget.category ?? 'Uncategorized'),
       explanation: row['explanation'] ?? '',
       type: type,
       imageUrls: null,
@@ -239,7 +239,7 @@ Future<void> _pickCsv() async {
     case CsvImportMode.language:
       return widget.languageId ?? 'Languages';
     case CsvImportMode.adventure:
-      return widget.category ?? 'General';
+      return widget.category ?? 'Uncategorized';
   }
 }
 

@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/screens/admin/add_edit_question.dart';
+import 'package:kohntri_os_hq/screens/admin/daily_content_overview.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'content_bank_screen.dart';
 import 'widgets/quick_add_question_sheet.dart';
 import '../languages_management_screen.dart';
+
 // Adjust this import to match your project structure:
 // or: import 'add_edit_question_screen.dart';
 
 class ContentHubScreen extends StatefulWidget {
   final int initialTab;
+  
+  
 
   const ContentHubScreen({super.key, this.initialTab = 0});
 
@@ -27,7 +31,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: 5,
       vsync: this,
       initialIndex: widget.initialTab,
     );
@@ -51,9 +55,9 @@ class _ContentHubScreenState extends State<ContentHubScreen>
     );
 
     if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Question added')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Question added')));
     }
   }
 
@@ -68,9 +72,9 @@ class _ContentHubScreenState extends State<ContentHubScreen>
     );
 
     if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Question saved')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Question saved')));
     }
   }
 
@@ -116,8 +120,9 @@ class _ContentHubScreenState extends State<ContentHubScreen>
                   onTap: () => Navigator.pop(ctx, 'quick'),
                 ),
                 ListTile(
-                  leading:
-                      const CircleAvatar(child: Icon(Icons.edit_note_rounded)),
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.edit_note_rounded),
+                  ),
                   title: const Text('Full editor'),
                   subtitle: const Text(
                     'All types, levels, audio, CSV queue, preview…',
@@ -126,10 +131,10 @@ class _ContentHubScreenState extends State<ContentHubScreen>
                 ),
                 ListTile(
                   leading: const CircleAvatar(
-                      child: Icon(Icons.category_outlined)),
+                    child: Icon(Icons.category_outlined),
+                  ),
                   title: const Text('Full editor + choose category'),
-                  subtitle:
-                      const Text('Pick category first, then open editor'),
+                  subtitle: const Text('Pick category first, then open editor'),
                   onTap: () => Navigator.pop(ctx, 'full_category'),
                 ),
               ],
@@ -162,11 +167,11 @@ class _ContentHubScreenState extends State<ContentHubScreen>
   Future<String?> _pickCategory() async {
     // Adjust to match your real categories
     const categories = [
-      'General',
+      'Proverbs',
+      'Interesting Facts',
       'History',
-      'Geography',
-      'Culture',
-      'Science',
+      'Food',
+      'Places',
       'Sports',
       'Languages',
     ];
@@ -209,6 +214,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
     _tabController.dispose();
     super.dispose();
   }
+  
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +230,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
           tabs: const [
             Tab(text: 'Questions'),
             Tab(text: 'Languages'),
+            Tab(text: 'Daily'),
             Tab(text: 'Reports'),
             Tab(text: 'Contributions'),
           ],
@@ -231,12 +238,13 @@ class _ContentHubScreenState extends State<ContentHubScreen>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          _QuestionsTab(),
-          _LanguagesTab(),
-          _ReportsTab(),
-          _ContributionsTab(),
-        ],
+       children: const [
+  _QuestionsTab(),
+  _LanguagesTab(),
+  _DailyContentTab(),
+  _ReportsTab(),
+  _ContributionsTab(),
+],
       ),
       floatingActionButton: _showFab
           ? FloatingActionButton.extended(
@@ -258,10 +266,7 @@ class _QuestionsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: const ContentBankScreen(),
-    );
+    return Container(color: Colors.white, child: const ContentBankScreen());
   }
 }
 
@@ -317,9 +322,9 @@ class _ReportsTabState extends State<_ReportsTab> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load reports: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load reports: $error')));
     }
   }
 
@@ -340,9 +345,9 @@ class _ReportsTabState extends State<_ReportsTab> {
       await _loadReports();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
   }
 
@@ -407,64 +412,64 @@ class _ReportsTabState extends State<_ReportsTab> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _reports.isEmpty
-                ? const Center(child: Text('No reports in the queue.'))
-                : ListView.builder(
-                    itemCount: _reports.length,
-                    itemBuilder: (context, index) {
-                      final item = _reports[index];
-                      final selected = _selected.contains(item['id'].toString());
-                      return CheckboxListTile(
-                        value: selected,
-                        onChanged: (value) {
-                          setState(() {
-                            final id = item['id'].toString();
-                            if (value == true) {
-                              _selected.add(id);
-                            } else {
-                              _selected.remove(id);
-                            }
-                          });
-                        },
-                        title: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                (item['category'] ?? 'General').toString(),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                (item['message'] ?? '').toString(),
-                                maxLines: 6,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        subtitle: Text(
-                          '${item['user_id'] ?? 'unknown'} • ${_formatAge(item['created_at'])}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        secondary: TextButton(
-                          onPressed: () => _showReportDetails(item),
-                          child: const Text('View'),
-                        ),
-                      );
+            ? const Center(child: Text('No reports in the queue.'))
+            : ListView.builder(
+                itemCount: _reports.length,
+                itemBuilder: (context, index) {
+                  final item = _reports[index];
+                  final selected = _selected.contains(item['id'].toString());
+                  return CheckboxListTile(
+                    value: selected,
+                    onChanged: (value) {
+                      setState(() {
+                        final id = item['id'].toString();
+                        if (value == true) {
+                          _selected.add(id);
+                        } else {
+                          _selected.remove(id);
+                        }
+                      });
                     },
-                  ),
+                    title: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            (item['category'] ?? 'General').toString(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            (item['message'] ?? '').toString(),
+                            maxLines: 6,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      '${item['user_id'] ?? 'unknown'} • ${_formatAge(item['created_at'])}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    secondary: TextButton(
+                      onPressed: () => _showReportDetails(item),
+                      child: const Text('View'),
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
@@ -536,23 +541,45 @@ class _ReportsTabState extends State<_ReportsTab> {
     );
 
     if (result == true) {
-      await Supabase.instance.client.from('content_reports').update({
-        'status': 'fixed',
-        'reviewed_at': DateTime.now().toIso8601String(),
-        'review_notes': controller.text.trim().isEmpty
-            ? '(bulk)'
-            : controller.text.trim(),
-      }).eq('id', item['id']);
+      await Supabase.instance.client
+          .from('content_reports')
+          .update({
+            'status': 'fixed',
+            'reviewed_at': DateTime.now().toIso8601String(),
+            'review_notes': controller.text.trim().isEmpty
+                ? '(bulk)'
+                : controller.text.trim(),
+          })
+          .eq('id', item['id']);
       await _loadReports();
     } else if (result == false) {
       final note = controller.text.trim();
-      await Supabase.instance.client.from('content_reports').update({
-        'status': 'rejected',
-        'reviewed_at': DateTime.now().toIso8601String(),
-        'review_notes': note.isEmpty ? 'Rejected' : note,
-      }).eq('id', item['id']);
+      await Supabase.instance.client
+          .from('content_reports')
+          .update({
+            'status': 'rejected',
+            'reviewed_at': DateTime.now().toIso8601String(),
+            'review_notes': note.isEmpty ? 'Rejected' : note,
+          })
+          .eq('id', item['id']);
       await _loadReports();
     }
+  }
+}
+
+// ─────────────────────────────────────────────
+// Daily tab
+// ─────────────────────────────────────────────
+
+class _DailyContentTab extends StatelessWidget {
+  const _DailyContentTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      child: const DailyContentOverview(),
+    );
   }
 }
 
@@ -621,9 +648,9 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       await _loadSubmissions();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update failed: $error')));
     }
   }
 
@@ -751,42 +778,42 @@ class _ContributionsTabState extends State<_ContributionsTab> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _submissions.isEmpty
-                ? const Center(child: Text('No contributions in the queue.'))
-                : ListView.builder(
-                    itemCount: _submissions.length,
-                    itemBuilder: (context, index) {
-                      final item = _submissions[index];
-                      final selected = _selected.contains(item['id'] as int);
-                      return CheckboxListTile(
-                        value: selected,
-                        onChanged: (value) {
-                          setState(() {
-                            if (value == true) {
-                              _selected.add(item['id'] as int);
-                            } else {
-                              _selected.remove(item['id'] as int);
-                            }
-                          });
-                        },
-                        title: Text((item['title'] ?? 'Untitled').toString()),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (item['content'] ?? '').toString(),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${item['submission_type'] ?? 'question'} • ${_formatAge(item['created_at'])}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      );
+            ? const Center(child: Text('No contributions in the queue.'))
+            : ListView.builder(
+                itemCount: _submissions.length,
+                itemBuilder: (context, index) {
+                  final item = _submissions[index];
+                  final selected = _selected.contains(item['id'] as int);
+                  return CheckboxListTile(
+                    value: selected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selected.add(item['id'] as int);
+                        } else {
+                          _selected.remove(item['id'] as int);
+                        }
+                      });
                     },
-                  ),
+                    title: Text((item['title'] ?? 'Untitled').toString()),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (item['content'] ?? '').toString(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item['submission_type'] ?? 'question'} • ${_formatAge(item['created_at'])}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }

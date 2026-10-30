@@ -19,7 +19,7 @@ class CategoriesBarCard extends StatelessWidget {
       'history': Icons.history_edu,
       'food': Icons.restaurant,
       'sports': Icons.sports_soccer,
-      'travel': Icons.map,
+      'places': Icons.map,
       'language': Icons.translate,
     };
 

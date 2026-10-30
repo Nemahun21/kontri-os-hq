@@ -65,7 +65,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   List<Uint8List?> _selectedImageBytes = [];
 
   int _correctAnswerIndex = 0;
-  String _selectedCategory = 'General';
+  String _selectedCategory = '';
   QuestionType _selectedType = QuestionType.multipleChoice;
   int _points = 10;
   bool _isLoading = false;
@@ -173,8 +173,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   Future<void> _initializeNewQuestionData() async {
     if (_isLanguageMode) {
       if (widget.languageName != null) {
-        _selectedLanguageId =
-            await _langService.getLanguageIdByName(widget.languageName!);
+        _selectedLanguageId = await _langService.getLanguageIdByName(
+          widget.languageName!,
+        );
       }
       await _loadLanguages();
       if (_selectedLanguageId != null) {
@@ -255,8 +256,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       parsed = ReviewQueueParser.parse(bytes);
     } catch (e) {
       if (!mounted) return;
-      _toast('Could not read file. Use .xlsx or .csv with template columns. ($e)',
-          error: true);
+      _toast(
+        'Could not read file. Use .xlsx or .csv with template columns. ($e)',
+        error: true,
+      );
       return;
     }
     if (parsed.items.isEmpty) {
@@ -285,8 +288,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text('Start review queue'),
           content: SingleChildScrollView(
             child: Column(
@@ -300,10 +304,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 ),
                 if (parsed.skipped.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  ...parsed.skipped.take(6).map(
-                        (s) => Text(s,
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.orange[800])),
+                  ...parsed.skipped
+                      .take(6)
+                      .map(
+                        (s) => Text(
+                          s,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange[800],
+                          ),
+                        ),
                       ),
                 ],
                 const SizedBox(height: 16),
@@ -320,8 +330,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Use Level numbers from file'),
-                  subtitle:
-                      const Text('Off = next free level in the database'),
+                  subtitle: const Text('Off = next free level in the database'),
                   value: useFileLevel,
                   onChanged: (v) => setLocal(() => useFileLevel = v),
                 ),
@@ -330,8 +339,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, {
                 'start': (int.tryParse(startCtrl.text) ?? 1)
@@ -406,8 +416,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     switch (item.type) {
       case QuestionType.multipleChoice:
         for (final c in _optionControllers) c.dispose();
-        _optionControllers =
-            item.options.map((o) => TextEditingController(text: o)).toList();
+        _optionControllers = item.options
+            .map((o) => TextEditingController(text: o))
+            .toList();
         _correctAnswerIndex = item.correctIndex;
         break;
       case QuestionType.trueFalse:
@@ -470,8 +481,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text('Queue complete'),
           content: Text('All $total items reviewed and processed.'),
           actions: [
@@ -512,7 +524,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       _queueIndex = -1;
       _queueNote = null;
     });
-    _toast('Queue stopped at item $at. Reload file and start at $at to resume.');
+    _toast(
+      'Queue stopped at item $at. Reload file and start at $at to resume.',
+    );
   }
 
   // ─────────────────────────────────────────────
@@ -532,15 +546,17 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
 
   Future<void> _loadExistingLevels() async {
     if (_selectedCategory.isEmpty) return;
-    final rows =
-        await _questionService.getLevelNumbersByDifficulty(_selectedCategory);
+    final rows = await _questionService.getLevelNumbersByDifficulty(
+      _selectedCategory,
+    );
     if (!mounted) return;
     setState(() {
       _existingLevels = rows;
       if (widget.question == null && _selectedDifficulty != null) {
         final existing = rows[_selectedDifficulty!.name] ?? <int>{};
-        final maxLevel =
-            existing.isEmpty ? 0 : existing.reduce((a, b) => a > b ? a : b);
+        final maxLevel = existing.isEmpty
+            ? 0
+            : existing.reduce((a, b) => a > b ? a : b);
         _nextLevel = maxLevel + 1;
         _levelController.text = _nextLevel.toString();
       }
@@ -604,8 +620,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           : DeviceFileSource(_audioFile!.path!);
       await _previewPlayer!.setSource(source);
       if (_trimStart > 0) {
-        await _previewPlayer!
-            .seek(Duration(milliseconds: (_trimStart * 1000).round()));
+        await _previewPlayer!.seek(
+          Duration(milliseconds: (_trimStart * 1000).round()),
+        );
       }
       await _previewPlayer!.setVolume(0);
       await _previewPlayer!.resume();
@@ -674,9 +691,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   }
 
   List<int> _getBlankIndices() => List.generate(
-        _sentenceSegments.length,
-        (i) => i,
-      ).where((i) => _sentenceSegments[i] == null).toList();
+    _sentenceSegments.length,
+    (i) => i,
+  ).where((i) => _sentenceSegments[i] == null).toList();
 
   String _generateWordId() =>
       'w${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(1 << 20)}';
@@ -705,7 +722,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         break;
       case QuestionType.imageChoice:
         _optionControllers = List.generate(
-            4, (i) => TextEditingController(text: 'Option ${i + 1}'));
+          4,
+          (i) => TextEditingController(text: 'Option ${i + 1}'),
+        );
         _selectedImages = [null];
         break;
       case QuestionType.dragAndDrop:
@@ -737,8 +756,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         _selectedImages = [];
         break;
     }
-    _selectedImageBytes =
-        List<Uint8List?>.filled(_selectedImages.length, null);
+    _selectedImageBytes = List<Uint8List?>.filled(_selectedImages.length, null);
   }
 
   dynamic _buildCurrentObject({bool forPreview = false}) {
@@ -761,7 +779,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         typeData = {
           'pairs': pairs,
           'correctMatches': List.generate(
-              pairs.length, (i) => {'leftIndex': i, 'rightIndex': i}),
+            pairs.length,
+            (i) => {'leftIndex': i, 'rightIndex': i},
+          ),
         };
       }
     } else if (_selectedType == QuestionType.fillBlank) {
@@ -775,7 +795,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         },
       };
     } else if (_selectedType == QuestionType.audioGuess) {
-      if (_existingAudioUrl != null) typeData = {'audio_url': _existingAudioUrl};
+      if (_existingAudioUrl != null)
+        typeData = {'audio_url': _existingAudioUrl};
     }
 
     if (widget.isDailyChallenge) {
@@ -850,6 +871,15 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   // ─────────────────────────────────────────────
 
   Future<void> _saveQuestion() async {
+    if (_selectedCategory.isEmpty) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Select a category before saving'),
+      backgroundColor: Colors.red,
+    ),
+  );
+  return;
+}
     if (!_formKey.currentState!.validate()) return;
 
     if (_queueActive &&
@@ -886,8 +916,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           final userId =
               Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
           final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-          audioUrl =
-              await _uploadAudio(_audioFile!, userId, tempId, isDaily: true);
+          audioUrl = await _uploadAudio(
+            _audioFile!,
+            userId,
+            tempId,
+            isDaily: true,
+          );
           if (audioUrl == null) throw Exception('Audio upload failed');
         }
         final finalQuestion = DailyChallengeQuestion(
@@ -926,10 +960,13 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             if (file != null) {
               final userId =
                   Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
-              final tempId =
-                  DateTime.now().millisecondsSinceEpoch.toString();
-              final url =
-                  await _uploadImage(file, userId, tempId, isLanguage: true);
+              final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+              final url = await _uploadImage(
+                file,
+                userId,
+                tempId,
+                isLanguage: true,
+              );
               if (url == null) throw Exception('Image upload failed');
               imageUrl = url;
               break;
@@ -941,8 +978,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           final userId =
               Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
           final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-          audioUrl = await _uploadAudio(_audioFile!, userId, tempId,
-              isLanguage: true);
+          audioUrl = await _uploadAudio(
+            _audioFile!,
+            userId,
+            tempId,
+            isLanguage: true,
+          );
           if (audioUrl == null) throw Exception('Audio upload failed');
         } else if (_existingAudioUrl != null) {
           audioUrl = _existingAudioUrl;
@@ -1045,8 +1086,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             if (mounted) {
               setState(() => _isLoading = false);
               _toast(
-                  'Level $resolvedLevel (${resolvedDifficulty.name}) already has a question.',
-                  error: true);
+                'Level $resolvedLevel (${resolvedDifficulty.name}) already has a question.',
+                error: true,
+              );
             }
             return;
           }
@@ -1062,8 +1104,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             if (mounted) {
               setState(() => _isLoading = false);
               _toast(
-                  'Level $resolvedLevel (${resolvedDifficulty.name}) already has a different question.',
-                  error: true);
+                'Level $resolvedLevel (${resolvedDifficulty.name}) already has a different question.',
+                error: true,
+              );
             }
             return;
           }
@@ -1142,7 +1185,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await Supabase.instance.client.storage
           .from(bucket)
           .uploadBinary(fileName, bytes);
-      return Supabase.instance.client.storage.from(bucket).getPublicUrl(fileName);
+      return Supabase.instance.client.storage
+          .from(bucket)
+          .getPublicUrl(fileName);
     } catch (e) {
       if (kDebugMode) print('❌ Upload error: $e');
       return null;
@@ -1180,7 +1225,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await Supabase.instance.client.storage
           .from(bucket)
           .uploadBinary(fileName, bytes);
-      return Supabase.instance.client.storage.from(bucket).getPublicUrl(fileName);
+      return Supabase.instance.client.storage
+          .from(bucket)
+          .getPublicUrl(fileName);
     } catch (e) {
       if (kDebugMode) print('Upload error: $e');
       return null;
@@ -1218,12 +1265,15 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _selectedType = q.type;
     _correctAnswerIndex = q.correctAnswerIndex;
     _points = q.points;
-    _optionControllers =
-        q.options.map((opt) => TextEditingController(text: opt)).toList();
+    _optionControllers = q.options
+        .map((opt) => TextEditingController(text: opt))
+        .toList();
     if (q.imageUrls != null) {
       final count = q.imageUrls!.length;
       _optionControllers = List.generate(
-          count, (i) => TextEditingController(text: q.options[i]));
+        count,
+        (i) => TextEditingController(text: q.options[i]),
+      );
       _selectedImages = List.generate(count, (_) => null);
       _selectedImageBytes = List<Uint8List?>.filled(count, null);
     }
@@ -1273,8 +1323,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _trimStart = q.trimStart ?? 0.0;
     _trimEnd = q.trimEnd ?? 0.0;
     _existingAudioUrl = q.audioUrl;
-    _optionControllers =
-        q.options.map((opt) => TextEditingController(text: opt)).toList();
+    _optionControllers = q.options
+        .map((opt) => TextEditingController(text: opt))
+        .toList();
     _updateOptionsForType();
   }
 
@@ -1293,8 +1344,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _existingAudioUrl = q.audioUrl;
     _selectedLanguageId = q.languageTypeId;
     _selectedThemeId = q.themeId;
-    _optionControllers =
-        q.options.map((opt) => TextEditingController(text: opt)).toList();
+    _optionControllers = q.options
+        .map((opt) => TextEditingController(text: opt))
+        .toList();
     _loadLanguages();
     _loadThemesForLanguage(q.languageTypeId);
     _updateOptionsForType();
@@ -1306,8 +1358,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       await _loadThemesForLanguage(_selectedLanguageId!);
     }
     if (_selectedThemeId == null) return;
-    final questions =
-        await _langService.getQuestionsForTheme(_selectedThemeId!);
+    final questions = await _langService.getQuestionsForTheme(
+      _selectedThemeId!,
+    );
     LanguageQuestion? match;
     for (final item in questions) {
       if (item.id == widget.question!.id) {
@@ -1408,8 +1461,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 4),
-              Text(subtitle,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
             ],
             const SizedBox(height: 12),
             ...children,
@@ -1439,8 +1494,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             child: Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.amber.shade700,
                     borderRadius: BorderRadius.circular(20),
@@ -1475,8 +1532,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 value: progress,
                 minHeight: 6,
                 backgroundColor: Colors.amber.shade100,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(Colors.amber.shade700),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Colors.amber.shade700,
+                ),
               ),
             ),
           ),
@@ -1487,13 +1545,21 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (_queueNote != null)
-                    Text(_queueNote!,
-                        style: TextStyle(
-                            color: Colors.deepOrange[800], fontSize: 12)),
+                    Text(
+                      _queueNote!,
+                      style: TextStyle(
+                        color: Colors.deepOrange[800],
+                        fontSize: 12,
+                      ),
+                    ),
                   for (final w in item.warnings)
-                    Text('⚠ $w',
-                        style: TextStyle(
-                            color: Colors.deepOrange[800], fontSize: 12)),
+                    Text(
+                      '⚠ $w',
+                      style: TextStyle(
+                        color: Colors.deepOrange[800],
+                        fontSize: 12,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1553,9 +1619,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       String langName = widget.languageName ?? '?';
       if (widget.languageName == null && _selectedLanguageId != null) {
         final found = _languages.cast<Map<String, dynamic>>().firstWhere(
-              (l) => l['id'] == _selectedLanguageId,
-              orElse: () => {},
-            );
+          (l) => l['id'] == _selectedLanguageId,
+          orElse: () => {},
+        );
         if (found.isNotEmpty) langName = found['name'] as String;
       }
       String themeName = widget.themeName ?? '?';
@@ -1621,7 +1687,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     labelText: 'Option ${String.fromCharCode(65 + i)}',
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     suffixIcon: isCorrect
                         ? const Icon(Icons.check_circle, color: Colors.green)
                         : null,
@@ -1632,8 +1700,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
               Radio<int>(
                 value: i,
                 groupValue: _correctAnswerIndex,
-                onChanged: (val) =>
-                    setState(() => _correctAnswerIndex = val!),
+                onChanged: (val) => setState(() => _correctAnswerIndex = val!),
                 activeColor: Colors.green,
               ),
             ],
@@ -1646,8 +1713,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   Widget? _buildImagePreview(int index) {
     if (index < _selectedImageBytes.length &&
         _selectedImageBytes[index] != null) {
-      return Image.memory(_selectedImageBytes[index]!,
-          width: 72, height: 72, fit: BoxFit.cover);
+      return Image.memory(
+        _selectedImageBytes[index]!,
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+      );
     }
     final existingUrl = widget.question?.imageUrls?[index.toString()];
     if (existingUrl != null && existingUrl.isNotEmpty) {
@@ -1656,8 +1727,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         width: 72,
         height: 72,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            const Icon(Icons.broken_image, size: 28),
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 28),
       );
     }
     return null;
@@ -1713,8 +1783,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     ),
                     if (_optionControllers.length > 1)
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline,
-                            color: Colors.red),
+                        icon: const Icon(
+                          Icons.remove_circle_outline,
+                          color: Colors.red,
+                        ),
                         onPressed: () => _removeImageOption(i),
                       ),
                   ],
@@ -1732,7 +1804,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                       onPressed: () => _pickImage(i),
                       icon: const Icon(Icons.image_outlined, size: 18),
                       label: Text(
-                          _buildImagePreview(i) == null ? 'Pick' : 'Change'),
+                        _buildImagePreview(i) == null ? 'Pick' : 'Change',
+                      ),
                     ),
                   ],
                 ),
@@ -1792,8 +1865,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Image ${i + 1}',
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(
+                        'Image ${i + 1}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                       if (_buildImagePreview(i) != null) ...[
                         const SizedBox(height: 6),
                         ClipRRect(
@@ -1805,9 +1880,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                       OutlinedButton.icon(
                         onPressed: () => _pickImage(i),
                         icon: const Icon(Icons.image_outlined, size: 18),
-                        label: Text(_buildImagePreview(i) == null
-                            ? 'Pick'
-                            : 'Change'),
+                        label: Text(
+                          _buildImagePreview(i) == null ? 'Pick' : 'Change',
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -1830,8 +1905,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 ),
                 if (_optionControllers.length > 1)
                   IconButton(
-                    icon: const Icon(Icons.remove_circle_outline,
-                        color: Colors.red),
+                    icon: const Icon(
+                      Icons.remove_circle_outline,
+                      color: Colors.red,
+                    ),
                     onPressed: () {
                       setState(() {
                         _optionControllers[i].dispose();
@@ -1840,10 +1917,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                         if (i < _selectedImageBytes.length) {
                           _selectedImageBytes.removeAt(i);
                         }
-                        if (_correctAnswerIndex >=
-                            _optionControllers.length) {
-                          _correctAnswerIndex =
-                              _optionControllers.length - 1;
+                        if (_correctAnswerIndex >= _optionControllers.length) {
+                          _correctAnswerIndex = _optionControllers.length - 1;
                         }
                       });
                     },
@@ -1881,8 +1956,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Sentence segments',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        const Text(
+          'Sentence segments',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         const SizedBox(height: 8),
         ...List.generate(_sentenceSegments.length, (i) {
           return Padding(
@@ -1909,24 +1986,29 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: Colors.amber.shade200),
                           ),
-                          child: const Text('BLANK',
-                              style: TextStyle(
-                                  fontStyle: FontStyle.italic,
-                                  fontWeight: FontWeight.w600)),
+                          child: const Text(
+                            'BLANK',
+                            style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
                   onPressed: () => setState(() {
-                    final oldMappings =
-                        Map<int, String>.fromEntries(_blankMappings);
+                    final oldMappings = Map<int, String>.fromEntries(
+                      _blankMappings,
+                    );
                     _sentenceSegments.removeAt(i);
                     final validBlanks = _getBlankIndices().toSet();
                     final rebuilt = <MapEntry<int, String>>[];
                     for (final entry in oldMappings.entries) {
                       if (entry.key == i) continue;
-                      final newIndex =
-                          entry.key > i ? entry.key - 1 : entry.key;
+                      final newIndex = entry.key > i
+                          ? entry.key - 1
+                          : entry.key;
                       if (validBlanks.contains(newIndex)) {
                         rebuilt.add(MapEntry(newIndex, entry.value));
                       }
@@ -1953,8 +2035,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        const Text('Word bank',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        const Text('Word bank', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         ...List.generate(_wordBank.length, (i) {
           return Padding(
@@ -1979,8 +2060,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     final removedId = _wordBank[i]['id'] as String;
                     setState(() {
                       _wordBank.removeAt(i);
-                      _blankMappings
-                          .removeWhere((e) => e.value == removedId);
+                      _blankMappings.removeWhere((e) => e.value == removedId);
                     });
                   },
                 ),
@@ -1990,13 +2070,16 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }),
         TextButton.icon(
           onPressed: () => setState(
-              () => _wordBank.add({'id': _generateWordId(), 'text': ''})),
+            () => _wordBank.add({'id': _generateWordId(), 'text': ''}),
+          ),
           icon: const Icon(Icons.add, size: 18),
           label: const Text('Add word'),
         ),
         const SizedBox(height: 16),
-        const Text('Blank mappings',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        const Text(
+          'Blank mappings',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         const SizedBox(height: 8),
         ..._getBlankIndices().map((blankIndex) {
           final currentMappedId = _blankMappings
@@ -2014,15 +2097,20 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
               children: [
                 SizedBox(
                   width: 72,
-                  child: Text('Blank $blankIndex',
-                      style: const TextStyle(fontSize: 13)),
+                  child: Text(
+                    'Blank $blankIndex',
+                    style: const TextStyle(fontSize: 13),
+                  ),
                 ),
                 Expanded(
                   child: _wordBank.isEmpty
-                      ? Text('(Add words first)',
+                      ? Text(
+                          '(Add words first)',
                           style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey[600]))
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey[600],
+                          ),
+                        )
                       : DropdownButtonFormField<String>(
                           value: validValue,
                           isDense: true,
@@ -2039,11 +2127,11 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                           }).toList(),
                           onChanged: (val) {
                             setState(() {
-                              _blankMappings
-                                  .removeWhere((e) => e.key == blankIndex);
+                              _blankMappings.removeWhere(
+                                (e) => e.key == blankIndex,
+                              );
                               if (val != null && val.isNotEmpty) {
-                                _blankMappings
-                                    .add(MapEntry(blankIndex, val));
+                                _blankMappings.add(MapEntry(blankIndex, val));
                               }
                             });
                           },
@@ -2090,11 +2178,11 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                   icon: const Icon(Icons.remove_circle_outline, size: 20),
                   onPressed: _matchLeftControllers.length > 1
                       ? () => setState(() {
-                            _matchLeftControllers[i].dispose();
-                            _matchRightControllers[i].dispose();
-                            _matchLeftControllers.removeAt(i);
-                            _matchRightControllers.removeAt(i);
-                          })
+                          _matchLeftControllers[i].dispose();
+                          _matchRightControllers[i].dispose();
+                          _matchLeftControllers.removeAt(i);
+                          _matchRightControllers.removeAt(i);
+                        })
                       : null,
                 ),
               ],
@@ -2124,8 +2212,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                 _audioFile != null
                     ? _audioFile!.name
                     : (_existingAudioUrl != null
-                        ? 'Existing audio file'
-                        : 'No audio selected'),
+                          ? 'Existing audio file'
+                          : 'No audio selected'),
                 style: TextStyle(
                   color: _audioFile != null || _existingAudioUrl != null
                       ? Colors.black87
@@ -2146,8 +2234,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             _audioDuration != null &&
             !_isLoadingDuration) ...[
           const SizedBox(height: 12),
-          Text('Trim  ·  Start ${_trimStart.toStringAsFixed(1)}s  →  '
-              'End ${_trimEnd.toStringAsFixed(1)}s'),
+          Text(
+            'Trim  ·  Start ${_trimStart.toStringAsFixed(1)}s  →  '
+            'End ${_trimEnd.toStringAsFixed(1)}s',
+          ),
           Row(
             children: [
               Expanded(
@@ -2199,7 +2289,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
 
   Widget _buildDifficultySelector() {
     final difficulties = [Difficulty.easy, Difficulty.medium, Difficulty.hard];
-    final labels = ['Easy', 'Medium', 'Hard'];
+    final labels = ['Easy', 'Moderate', 'Hard'];
 
     return Column(
       children: List.generate(3, (index) {
@@ -2247,8 +2337,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                     child: Text(
                       '${labels[index]}  ·  ${existing.length} level${existing.length == 1 ? '' : 's'}',
                       style: TextStyle(
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.w400,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                       ),
                     ),
                   ),
@@ -2289,8 +2380,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
 
   List<int> _freeLevelsFor(String difficultyKey) {
     final existing = _existingLevels[difficultyKey] ?? <int>{};
-    final maxLevel =
-        existing.isEmpty ? 0 : existing.reduce((a, b) => a > b ? a : b);
+    final maxLevel = existing.isEmpty
+        ? 0
+        : existing.reduce((a, b) => a > b ? a : b);
     final limit = maxLevel + 5;
     final result = <int>[];
     for (var i = 1; i <= limit; i++) {
@@ -2311,8 +2403,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           child: Row(
             children: [
               OutlinedButton(
-                onPressed:
-                    (_isLoading || _queueIndex <= 0) ? null : _previousQueueItem,
+                onPressed: (_isLoading || _queueIndex <= 0)
+                    ? null
+                    : _previousQueueItem,
                 child: const Icon(Icons.chevron_left),
               ),
               const SizedBox(width: 8),
@@ -2366,7 +2459,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             IconButton(
               icon: const Icon(Icons.playlist_add_check_rounded),
               tooltip: 'Review queue from CSV / Excel',
-              onPressed: (_isLoading ||
+              onPressed:
+                  (_isLoading ||
                       widget.question != null ||
                       widget.languageQuestion != null ||
                       widget.dailyQuestion != null ||
@@ -2414,8 +2508,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                             const SizedBox(height: 14),
 
                             // Position
-                            if (widget.isDailyChallenge ||
-                                _isLanguageMode)
+                            if (widget.isDailyChallenge || _isLanguageMode)
                               _sectionCard(
                                 title: 'Position',
                                 icon: Icons.format_list_numbered_rounded,
@@ -2429,8 +2522,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                                           : 'Position in Theme',
                                       border: const OutlineInputBorder(),
                                       isDense: true,
-                                      helperText:
-                                          'Lowest number appears first',
+                                      helperText: 'Lowest number appears first',
                                     ),
                                     onChanged: (v) =>
                                         _position = int.tryParse(v) ?? 1,
@@ -2439,7 +2531,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                                         return 'Required';
                                       }
                                       final pos = int.tryParse(v);
-                                      if (pos == null) return 'Must be a number';
+                                      if (pos == null)
+                                        return 'Must be a number';
                                       if (pos < 1) return 'Must be ≥ 1';
                                       return null;
                                     },
@@ -2448,8 +2541,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                               ),
 
                             // Difficulty
-                            if (!widget.isDailyChallenge &&
-                                !_isLanguageMode)
+                            if (!widget.isDailyChallenge && !_isLanguageMode)
                               _sectionCard(
                                 title: 'Difficulty & Level',
                                 icon: Icons.trending_up_rounded,
@@ -2478,8 +2570,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                             ),
 
                             // Scenario (general only)
-                            if (!widget.isDailyChallenge &&
-                                !_isLanguageMode)
+                            if (!widget.isDailyChallenge && !_isLanguageMode)
                               _sectionCard(
                                 title: 'Context (optional)',
                                 icon: Icons.menu_book_rounded,
@@ -2587,8 +2678,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                                 width: double.infinity,
                                 height: 50,
                                 child: FilledButton.icon(
-                                  onPressed:
-                                      _isLoading ? null : _saveQuestion,
+                                  onPressed: _isLoading ? null : _saveQuestion,
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _primary,
                                     shape: RoundedRectangleBorder(
@@ -2599,8 +2689,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
                                   label: const Text(
                                     'Save question',
                                     style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),
