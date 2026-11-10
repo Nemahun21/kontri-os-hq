@@ -167,6 +167,7 @@ class _ContentHubScreenState extends State<ContentHubScreen>
   Future<String?> _pickCategory() async {
     // Adjust to match your real categories
     const categories = [
+      'Daily Challenge',
       'Proverbs',
       'Interesting Facts',
       'History',

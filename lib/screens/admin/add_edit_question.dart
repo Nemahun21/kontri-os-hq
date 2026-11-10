@@ -221,65 +221,65 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   // ─────────────────────────────────────────────
   // Review queue
   // ─────────────────────────────────────────────
-
-  Future<void> _startReviewQueue() async {
-    if (_isLanguageMode &&
-        (_selectedLanguageId == null || _selectedThemeId == null)) {
-      _toast('Open this screen from a language theme first.', error: true);
-      return;
-    }
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['csv', 'xlsx'],
-      withData: true,
-    );
-    if (result == null || result.files.first.bytes == null) return;
-
-    final file = result.files.first;
-    ReviewQueueResult parsed;
-    try {
-      final isExcel = file.name.toLowerCase().endsWith('.xlsx');
-      var bytes = file.bytes!;
-      if (isExcel) {
-        final sheets = XlsxReader.read(bytes);
-        if (sheets.isEmpty) {
-          throw const FormatException('The Excel file has no data.');
-        }
-        var chosen = sheets;
-        if (sheets.length > 1) {
-          final picked = await _pickSheets(sheets);
-          if (picked == null) return;
-          chosen = picked;
-        }
-        bytes = XlsxReader.toCsv(chosen);
-      }
-      parsed = ReviewQueueParser.parse(bytes);
-    } catch (e) {
-      if (!mounted) return;
-      _toast(
-        'Could not read file. Use .xlsx or .csv with template columns. ($e)',
-        error: true,
-      );
-      return;
-    }
-    if (parsed.items.isEmpty) {
-      if (!mounted) return;
-      _toast('No questions found in the file.');
-      return;
-    }
-
-    final settings = await _askQueueSettings(parsed);
-    if (settings == null || !mounted) return;
-    setState(() {
-      _queue = parsed.items;
-      _queueIndex = (settings['start'] as int) - 1;
-      _useFileLevel = settings['useFileLevel'] as bool;
-      _isLoading = true;
-    });
-    await _loadQueueItem();
-    if (mounted) setState(() => _isLoading = false);
+Future<void> _startReviewQueue() async {
+  if (_isLanguageMode &&
+      (_selectedLanguageId == null || _selectedThemeId == null)) {
+    _toast('Open this screen from a language theme first.', error: true);
+    return;
   }
 
+  final files = await FilePicker.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['csv', 'xlsx'],
+  );
+  if (files.isEmpty) return;
+
+  final file = files.first;
+
+  ReviewQueueResult parsed;
+  try {
+    final isExcel = file.name.toLowerCase().endsWith('.xlsx');
+    var bytes = await file.readAsBytes();
+    if (isExcel) {
+      final sheets = XlsxReader.read(bytes);
+      if (sheets.isEmpty) {
+        throw const FormatException('The Excel file has no data.');
+      }
+      var chosen = sheets;
+      if (sheets.length > 1) {
+        final picked = await _pickSheets(sheets);
+        if (picked == null) return;
+        chosen = picked;
+      }
+      bytes = XlsxReader.toCsv(chosen);
+    }
+    parsed = ReviewQueueParser.parse(bytes);
+  } catch (e) {
+    if (!mounted) return;
+    _toast(
+      'Could not read file. Use .xlsx or .csv with template columns. ($e)',
+      error: true,
+    );
+    return;
+  }
+
+  if (parsed.items.isEmpty) {
+    if (!mounted) return;
+    _toast('No questions found in the file.');
+    return;
+  }
+
+  final settings = await _askQueueSettings(parsed);
+  if (settings == null || !mounted) return;
+  setState(() {
+    _queue = parsed.items;
+    _queueIndex = (settings['start'] as int) - 1;
+    _useFileLevel = settings['useFileLevel'] as bool;
+    _isLoading = true;
+  });
+  await _loadQueueItem();
+  if (mounted) setState(() => _isLoading = false);
+}
   Future<Map<String, dynamic>?> _askQueueSettings(ReviewQueueResult parsed) {
     final startCtrl = TextEditingController(text: '1');
     var useFileLevel = false;
@@ -615,9 +615,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           setState(() => _isPreviewPlaying = state == PlayerState.playing);
         }
       });
-      Source source = _audioFile!.bytes != null
-          ? BytesSource(_audioFile!.bytes!)
-          : DeviceFileSource(_audioFile!.path!);
+           final audioPath = _audioFile!.path;
+      final Source source = audioPath != null
+          ? DeviceFileSource(audioPath)
+          : BytesSource(await _audioFile!.readAsBytes());
       await _previewPlayer!.setSource(source);
       if (_trimStart > 0) {
         await _previewPlayer!.seek(
@@ -645,41 +646,38 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     }
   }
 
-  Future<void> _pickAudio() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: false,
-    );
-    if (result != null) {
-      setState(() {
-        _audioFile = result.files.first;
-        _existingAudioUrl = null;
-        _audioDuration = null;
-        _isLoadingDuration = true;
-      });
-      try {
-        final player = AudioPlayer();
-        final source = _audioFile!.bytes != null
-            ? BytesSource(_audioFile!.bytes!)
-            : DeviceFileSource(_audioFile!.path!);
-        await player.setSource(source);
-        final duration = await player.getDuration();
-        await player.dispose();
-        if (duration != null && mounted) {
-          setState(() {
-            _audioDuration = duration.inMilliseconds / 1000.0;
-            _trimStart = 0.0;
-            _trimEnd = _audioDuration!;
-          });
-        }
-      } catch (e) {
-        if (kDebugMode) print('Error getting audio duration: $e');
-      } finally {
-        if (mounted) setState(() => _isLoadingDuration = false);
+ Future<void> _pickAudio() async {
+  final file = await FilePicker.pickFile(type: FileType.audio);
+  if (file != null) {
+    setState(() {
+      _audioFile = file;
+      _existingAudioUrl = null;
+      _audioDuration = null;
+      _isLoadingDuration = true;
+    });
+    try {
+      final player = AudioPlayer();
+      final audioPath = file.path;
+      final source = audioPath != null
+          ? DeviceFileSource(audioPath)
+          : BytesSource(await file.readAsBytes());
+      await player.setSource(source);
+      final duration = await player.getDuration();
+      await player.dispose();
+      if (duration != null && mounted) {
+        setState(() {
+          _audioDuration = duration.inMilliseconds / 1000.0;
+          _trimStart = 0.0;
+          _trimEnd = _audioDuration!;
+        });
       }
+    } catch (e) {
+      if (kDebugMode) print('Error getting audio duration: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingDuration = false);
     }
   }
-
+}
   Future<void> _loadLanguages() async {
     final data = await _langService.getLanguages();
     setState(() => _languages = data);
@@ -756,8 +754,8 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         _selectedImages = [];
         break;
     }
-    _selectedImageBytes = List<Uint8List?>.filled(_selectedImages.length, null);
-  }
+    _selectedImageBytes =
+        List<Uint8List?>.generate(_selectedImages.length, (_) => null);  }
 
   dynamic _buildCurrentObject({bool forPreview = false}) {
     final options = _optionControllers
@@ -807,8 +805,9 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         options: options,
         correctAnswerIndex: _correctAnswerIndex,
         questionType: _selectedType.name,
-        imageUrl: null,
-        audioUrl: typeData?['audio_url'],
+               imageUrl: widget.dailyQuestion?.imageUrl,
+        imageUrls: widget.dailyQuestion?.imageUrls,
+        audioUrl: typeData?['audio_url'] ?? _existingAudioUrl,
         explanation: _explanationController.text.trim(),
         points: _points,
         position: _position,
@@ -837,10 +836,15 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     } else {
       final id = forPreview ? 'preview' : (widget.question?.id ?? '');
       Map<String, String>? imageUrls;
-      if (_selectedType == QuestionType.imageChoice ||
-          _selectedType == QuestionType.dragAndDrop) {
-        imageUrls = widget.question?.imageUrls ?? {};
+         if (_selectedType == QuestionType.imageChoice ||
+        _selectedType == QuestionType.dragAndDrop) {
+      while (_selectedImages.length < _optionControllers.length) {
+        _selectedImages.add(null);
       }
+      while (_selectedImageBytes.length < _selectedImages.length) {
+        _selectedImageBytes.add(null);
+      }
+    }
       return Question(
         id: id,
         question: _questionController.text.trim(),
@@ -871,15 +875,15 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
   // ─────────────────────────────────────────────
 
   Future<void> _saveQuestion() async {
-    if (_selectedCategory.isEmpty) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Select a category before saving'),
-      backgroundColor: Colors.red,
-    ),
-  );
-  return;
-}
+       if (!widget.isDailyChallenge && _selectedCategory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a category before saving'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     if (_queueActive &&
@@ -909,8 +913,40 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     setState(() => _isLoading = true);
 
     try {
-      if (widget.isDailyChallenge) {
+               if (widget.isDailyChallenge) {
         final base = _buildCurrentObject() as DailyChallengeQuestion;
+
+        // Build the image map: start from what's already in DB so
+        // untouched slots survive. Overlay any newly picked files.
+        Map<String, String> finalImageUrls = {
+          ...?widget.dailyQuestion?.imageUrls,
+        };
+        if (finalImageUrls.isEmpty && widget.dailyQuestion?.imageUrl != null) {
+          finalImageUrls['0'] = widget.dailyQuestion!.imageUrl!;
+        }
+
+        if (_selectedType == QuestionType.imageChoice ||
+            _selectedType == QuestionType.dragAndDrop) {
+          final userId =
+              Supabase.instance.client.auth.currentUser?.id ?? 'unknown';
+          final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+          for (int i = 0; i < _selectedImages.length; i++) {
+            final file = _selectedImages[i];
+            if (file != null) {
+              final url = await _uploadImage(
+                file,
+                userId,
+                tempId,
+                isDaily: true,
+              );
+              if (url == null) {
+                throw Exception('Image upload failed for option ${i + 1}');
+              }
+              finalImageUrls[i.toString()] = url;
+            }
+          }
+        }
+
         String? audioUrl = base.audioUrl;
         if (_audioFile != null) {
           final userId =
@@ -923,7 +959,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             isDaily: true,
           );
           if (audioUrl == null) throw Exception('Audio upload failed');
+        } else if (_existingAudioUrl != null) {
+          audioUrl = _existingAudioUrl;
         }
+
         final finalQuestion = DailyChallengeQuestion(
           id: base.id,
           dailyChallengeId: base.dailyChallengeId,
@@ -931,7 +970,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           options: base.options,
           correctAnswerIndex: base.correctAnswerIndex,
           questionType: base.questionType,
-          imageUrl: base.imageUrl,
+          imageUrl: finalImageUrls.isEmpty
+              ? null
+              : finalImageUrls.values.firstOrNull,
+          imageUrls: finalImageUrls.isEmpty ? null : finalImageUrls,
           audioUrl: audioUrl,
           explanation: base.explanation,
           points: base.points,
@@ -939,6 +981,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           trimStart: _trimStart,
           trimEnd: _trimEnd,
         );
+
         if (widget.dailyQuestion == null) {
           await _dailyService.addQuestion(finalQuestion);
         } else {
@@ -1193,47 +1236,36 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       return null;
     }
   }
-
-  Future<String?> _uploadAudio(
-    PlatformFile audio,
-    String userId,
-    String tempId, {
-    bool isDaily = false,
-    bool isLanguage = false,
-  }) async {
-    try {
-      String bucket;
-      if (isDaily) {
-        bucket = 'daily_challenge_audio';
-      } else if (isLanguage) {
-        bucket = 'language_question_audio';
-      } else {
-        bucket = 'question_audio';
-      }
-      final fileName =
-          '${isDaily ? 'daily' : (isLanguage ? 'lang' : 'question')}_${tempId}_${DateTime.now().millisecondsSinceEpoch}_${audio.name}';
-      Uint8List bytes;
-      if (kIsWeb) {
-        if (audio.bytes != null) {
-          bytes = audio.bytes!;
-        } else {
-          throw Exception('No bytes available on web');
-        }
-      } else {
-        bytes = audio.bytes ?? await File(audio.path!).readAsBytes();
-      }
-      await Supabase.instance.client.storage
-          .from(bucket)
-          .uploadBinary(fileName, bytes);
-      return Supabase.instance.client.storage
-          .from(bucket)
-          .getPublicUrl(fileName);
-    } catch (e) {
-      if (kDebugMode) print('Upload error: $e');
-      return null;
+Future<String?> _uploadAudio(
+  PlatformFile audio,
+  String userId,
+  String tempId, {
+  bool isDaily = false,
+  bool isLanguage = false,
+}) async {
+  try {
+    String bucket;
+    if (isDaily) {
+      bucket = 'daily_challenge_audio';
+    } else if (isLanguage) {
+      bucket = 'language_question_audio';
+    } else {
+      bucket = 'question_audio';
     }
+    final fileName =
+        '${isDaily ? 'daily' : (isLanguage ? 'lang' : 'question')}_${tempId}_${DateTime.now().millisecondsSinceEpoch}_${audio.name}';
+    final bytes = await audio.readAsBytes();
+    await Supabase.instance.client.storage
+        .from(bucket)
+        .uploadBinary(fileName, bytes);
+    return Supabase.instance.client.storage
+        .from(bucket)
+        .getPublicUrl(fileName);
+  } catch (e) {
+    if (kDebugMode) print('Upload error: $e');
+    return null;
   }
-
+}
   Future<void> _pickImage(int index) async {
     final XFile? picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -1275,8 +1307,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         (i) => TextEditingController(text: q.options[i]),
       );
       _selectedImages = List.generate(count, (_) => null);
-      _selectedImageBytes = List<Uint8List?>.filled(count, null);
-    }
+      _selectedImageBytes = List<Uint8List?>.generate(count, (_) => null);    }
     if (_optionControllers.isEmpty) _updateOptionsForType();
     if (q.typeData != null) {
       final data = q.typeData!;
@@ -1316,17 +1347,43 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     _questionController.text = q.question;
     _explanationController.text = q.explanation ?? '';
     _selectedType = QuestionType.fromString(q.questionType);
-    _correctAnswerIndex = q.correctAnswerIndex;
     _points = q.points;
     _position = q.position;
     _positionController.text = _position.toString();
     _trimStart = q.trimStart ?? 0.0;
     _trimEnd = q.trimEnd ?? 0.0;
     _existingAudioUrl = q.audioUrl;
-    _optionControllers = q.options
-        .map((opt) => TextEditingController(text: opt))
-        .toList();
+
+    // 1. Create option slots for this type.
+    //    This resets _correctAnswerIndex and _selectedImages — that is why
+    //    step 3 must run AFTER it.
     _updateOptionsForType();
+
+    // 2. Fill option text from DB.
+    for (var i = 0; i < q.options.length; i++) {
+      if (i < _optionControllers.length) {
+        _optionControllers[i].text = q.options[i];
+      } else {
+        _optionControllers.add(TextEditingController(text: q.options[i]));
+      }
+    }
+
+    // 3. Restore correct answer AFTER _updateOptionsForType wiped it.
+    if (q.correctAnswerIndex >= 0 &&
+        q.correctAnswerIndex < _optionControllers.length) {
+      _correctAnswerIndex = q.correctAnswerIndex;
+    }
+
+    // 4. Pre-size image slots so _buildImagePreview has an index to read.
+    if (_selectedType == QuestionType.imageChoice ||
+        _selectedType == QuestionType.dragAndDrop) {
+      while (_selectedImages.length < _optionControllers.length) {
+        _selectedImages.add(null);
+      }
+      while (_selectedImageBytes.length < _selectedImages.length) {
+        _selectedImageBytes.add(null);
+      }
+    }
   }
 
   void _loadLanguageForEdit() {
@@ -1709,7 +1766,6 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
       }),
     );
   }
-
   Widget? _buildImagePreview(int index) {
     if (index < _selectedImageBytes.length &&
         _selectedImageBytes[index] != null) {
@@ -1720,7 +1776,12 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         fit: BoxFit.cover,
       );
     }
-    final existingUrl = widget.question?.imageUrls?[index.toString()];
+    // Prefer the daily map (any slot). Fall back to legacy singular for slot 0.
+    final dailyMapUrl = widget.dailyQuestion?.imageUrls?[index.toString()];
+    final dailyLegacy = index == 0 ? widget.dailyQuestion?.imageUrl : null;
+    final existingUrl = dailyMapUrl ??
+        dailyLegacy ??
+        widget.question?.imageUrls?[index.toString()];
     if (existingUrl != null && existingUrl.isNotEmpty) {
       return Image.network(
         existingUrl,
@@ -1732,7 +1793,6 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     }
     return null;
   }
-
   Widget _buildImageChoiceFields() {
     if (_optionControllers.isEmpty) return const SizedBox.shrink();
     while (_selectedImages.length < _optionControllers.length) {

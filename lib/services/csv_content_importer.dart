@@ -60,15 +60,14 @@ Future<void> _pickCsv() async {
   });
 
   try {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['csv'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
+    final files = await FilePicker.pickFiles(
+  type: FileType.custom,
+  allowedExtensions: ['csv'],
+);
+if (files.isEmpty) return;
 
-    final file = result.files.first;
-    final bytes = file.bytes;
+final file = files.first;
+final bytes = await file.readAsBytes();
     if (bytes == null) {
       _snack('File bytes are null.');
       return;
@@ -98,8 +97,7 @@ Future<void> _pickCsv() async {
     // Step 2 — decode CSV
     List<List<dynamic>> parsed;
     try {
-      parsed = csv.decode(content);
-    } catch (e) {
+      parsed = const CsvToListConverter().convert(content);    } catch (e) {
       _snack('CSV decode failed: $e');
       return;
     }

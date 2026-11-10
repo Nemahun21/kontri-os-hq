@@ -98,8 +98,7 @@ class _DailyContentCsvImporterState extends State<DailyContentCsvImporter> {
       content = content.substring(1);
     }
 
-    List<List<dynamic>> parsed = csv.decode(content);
-
+    List<List<dynamic>> parsed = const CsvToListConverter().convert(content);
     if (parsed.isEmpty) {
       _snack('File is empty.');
       return;

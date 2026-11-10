@@ -2,6 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/models/lesson_vocab.dart';
 import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:csv/csv.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:kohntri_os_hq/services/xlsx_reader.dart';
+
 class LessonVocabularyManagementScreen extends StatefulWidget {
   final String contentType; // 'adventure' or 'language'
   final String? category; // Adventure only
@@ -304,6 +311,233 @@ class _LessonVocabularyManagementScreenState
     if (result == true) _load();
   }
 
+  Future<void> _importFromFile() async {
+  final files = await FilePicker.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: const ['csv', 'xlsx'],
+  );
+  if (files.isEmpty) return;
+
+  final file = files.first;
+  late List<Map<String, String>> rows;
+
+  try {
+    var bytes = await file.readAsBytes();
+    final isExcel = file.name.toLowerCase().endsWith('.xlsx');
+
+    if (isExcel) {
+      final sheets = XlsxReader.read(bytes);
+      if (sheets.isEmpty) {
+        throw const FormatException('Excel has no data.');
+      }
+      var chosen = sheets;
+      if (sheets.length > 1 && mounted) {
+        final picked = await showDialog<List<XlsxSheet>>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: const Text('Which sheet?'),
+            children: [
+              for (final s in sheets)
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(ctx, [s]),
+                  child: Text('${s.name} · ${s.rows.length - 1} rows'),
+                ),
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, sheets),
+                child: const Text('All sheets combined'),
+              ),
+            ],
+          ),
+        );
+        if (picked == null) return;
+        chosen = picked;
+      }
+      bytes = XlsxReader.toCsv(chosen);
+    }
+
+    rows = _parseLessonCsv(bytes);
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Could not read file: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+
+  if (rows.isEmpty) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('No data rows found.')),
+    );
+    return;
+  }
+
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Import lesson cards'),
+      content: Text(
+        '${rows.length} rows ready.\n'
+        '${_isAdventure ? 'Difficulty: $_selectedDifficulty\n' : ''}'
+        'Empty word/translation rows will be skipped.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Import'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !mounted) return;
+
+  setState(() => _isLoading = true);
+  var added = 0;
+  var skipped = 0;
+
+  try {
+    // Next position among current siblings
+    final siblings = _isAdventure
+        ? _items.where((i) => i.difficulty == _selectedDifficulty)
+        : _items;
+    var nextPos = siblings.isEmpty
+        ? 1
+        : siblings.map((i) => i.position).reduce((a, b) => a > b ? a : b) + 1;
+
+    for (final row in rows) {
+      final term = _cell(row, const ['word', 'term']);
+      final definition = _cell(row, const ['translation', 'definition']);
+      if (term.isEmpty || definition.isEmpty) {
+        skipped++;
+        continue;
+      }
+
+      final difficultyFromFile = _cell(row, const ['difficulty']).toLowerCase();
+      final difficulty = _isAdventure
+          ? (difficultyFromFile == 'easy' ||
+                  difficultyFromFile == 'medium' ||
+                  difficultyFromFile == 'hard'
+              ? difficultyFromFile
+              : _selectedDifficulty)
+          : null;
+
+      final posRaw = int.tryParse(_cell(row, const ['position']));
+      final position = posRaw ?? nextPos;
+      if (posRaw == null) nextPos++;
+
+      final vocab = LessonVocabulary(
+        id: '',
+        contentType: widget.contentType,
+        category: _isAdventure ? widget.category : null,
+        themeId: _isLanguage ? widget.themeId : null,
+        difficulty: difficulty,
+        term: term,
+        definition: definition,
+        pronunciation: _emptyToNull(_cell(row, const ['pronunciation'])),
+        example: _emptyToNull(_cell(row, const ['example'])),
+        emoji: _emptyToNull(_cell(row, const ['emoji'])),
+        imageUrl: _emptyToNull(_cell(row, const ['image', 'image_url'])),
+        position: position,
+      );
+
+      await _service.add(vocab);
+      added++;
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import stopped: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  await _load();
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Imported $added · skipped $skipped')),
+  );
+}
+
+String _cell(Map<String, String> row, List<String> keys) {
+  for (final k in keys) {
+    for (final e in row.entries) {
+      if (e.key.trim().toLowerCase() == k) {
+        return e.value.trim();
+      }
+    }
+  }
+  return '';
+}
+
+String? _emptyToNull(String s) => s.isEmpty ? null : s;
+List<Map<String, String>> _parseLessonCsv(Uint8List bytes) {
+  var content = utf8.decode(bytes, allowMalformed: true);
+  content = content.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  if (content.startsWith('\uFEFF')) {
+    content = content.substring(1);
+  }
+
+  final lines = content
+      .split('\n')
+      .map((l) => l.trimRight())
+      .where((l) => l.trim().isNotEmpty)
+      .toList();
+  if (lines.isEmpty) return [];
+
+  final header = _splitCsvLine(lines.first);
+  final rows = <Map<String, String>>[];
+
+  for (var i = 1; i < lines.length; i++) {
+    final raw = _splitCsvLine(lines[i]);
+    if (raw.every((c) => c.trim().isEmpty)) continue;
+
+    final map = <String, String>{};
+    for (var j = 0; j < header.length; j++) {
+      final key = header[j].trim();
+      if (key.isEmpty) continue;
+      map[key] = j < raw.length ? raw[j].trim() : '';
+    }
+    rows.add(map);
+  }
+  return rows;
+}
+
+/// Handles commas and simple "quoted, fields".
+List<String> _splitCsvLine(String line) {
+  final result = <String>[];
+  final buf = StringBuffer();
+  var inQuotes = false;
+
+  for (var i = 0; i < line.length; i++) {
+    final ch = line[i];
+    if (ch == '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+        buf.write('"');
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch == ',' && !inQuotes) {
+      result.add(buf.toString());
+      buf.clear();
+    } else {
+      buf.write(ch);
+    }
+  }
+  result.add(buf.toString());
+  return result;
+}
+
   // ---------------------- BUILD ----------------------
   @override
   Widget build(BuildContext context) {
@@ -316,6 +550,11 @@ class _LessonVocabularyManagementScreenState
         foregroundColor: Colors.black,
         elevation: 0,
         actions: [
+          IconButton(
+  icon: const Icon(Icons.upload_file_rounded),
+  tooltip: 'Import CSV / Excel',
+  onPressed: _isLoading ? null : _importFromFile,
+),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
