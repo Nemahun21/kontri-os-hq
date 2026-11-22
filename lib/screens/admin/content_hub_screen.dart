@@ -7,8 +7,10 @@ import 'content_bank_screen.dart';
 import 'widgets/quick_add_question_sheet.dart';
 import '../languages_management_screen.dart';
 
-// Adjust this import to match your project structure:
-// or: import 'add_edit_question_screen.dart';
+import 'package:kohntri_os_hq/admin_theme.dart';
+import 'package:kohntri_os_hq/screens/admin/report_detail_view.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 class ContentHubScreen extends StatefulWidget {
   final int initialTab;
@@ -286,11 +288,6 @@ class _LanguagesTab extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────
-// Reports tab
-// ─────────────────────────────────────────────
-
 class _ReportsTab extends StatefulWidget {
   const _ReportsTab();
 
@@ -299,34 +296,99 @@ class _ReportsTab extends StatefulWidget {
 }
 
 class _ReportsTabState extends State<_ReportsTab> {
+  static const double _splitBreakpoint = 900;
+
   List<Map<String, dynamic>> _reports = [];
   final Set<String> _selected = <String>{};
   bool _loading = true;
+  bool _selectMode = false;
+  String? _filter = 'new'; // null = all
+  String? _activeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReports();
+  }
+
+  void _snack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
 
   Future<void> _loadReports() async {
     setState(() => _loading = true);
     try {
-      final response = await Supabase.instance.client
-          .from('content_reports')
-          .select(
-            'id, category, language, content_id, message, created_at, status, user_id, app_version, platform',
-          )
-          .eq('status', 'new')
-          .order('created_at', ascending: false)
-          .limit(100);
+      var query = Supabase.instance.client.from('content_reports').select(
+            'id, category, language, content_id, message, created_at, status, user_id, app_version, platform, reviewed_at, review_notes',
+          );
+      if (_filter != null) query = query.eq('status', _filter!);
+      final response =
+          await query.order('created_at', ascending: false).limit(100);
 
       if (!mounted) return;
+      final next = List<Map<String, dynamic>>.from(response as List);
+
+      // Keep the open report if it's still listed; otherwise move to the
+      // report that now sits in its place.
+      final prevIndex =
+          _reports.indexWhere((r) => r['id'].toString() == _activeId);
+      String? nextActive = _activeId;
+      if (next.isEmpty) {
+        nextActive = null;
+      } else if (!next.any((r) => r['id'].toString() == _activeId)) {
+        final i = prevIndex < 0
+            ? 0
+            : (prevIndex >= next.length ? next.length - 1 : prevIndex);
+        nextActive = next[i]['id'].toString();
+      }
+
       setState(() {
-        _reports = List<Map<String, dynamic>>.from(response as List);
+        _reports = next;
+        _activeId = nextActive;
         _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to load reports: $error')));
+      _snack('Failed to load reports: $error');
     }
+  }
+
+  void _setFilter(String? value) {
+    if (value == _filter) return;
+    setState(() {
+      _filter = value;
+      _selected.clear();
+      _selectMode = false;
+      _activeId = null;
+      _reports = [];
+    });
+    _loadReports();
+  }
+
+  Future<bool> _setStatus(
+    Map<String, dynamic> report,
+    String status,
+    String note,
+  ) async {
+    try {
+      await Supabase.instance.client
+          .from('content_reports')
+          .update({
+            'status': status,
+            'reviewed_at': DateTime.now().toIso8601String(),
+            'review_notes': note,
+          })
+          .eq('id', report['id']);
+    } catch (error) {
+      _snack('Update failed: $error');
+      return false;
+    }
+    if (!mounted) return true;
+    await _loadReports();
+    _snack(status == 'fixed' ? 'Report resolved' : 'Report dismissed');
+    return true;
   }
 
   Future<void> _bulkUpdateStatus(String status, {String note = ''}) async {
@@ -342,13 +404,13 @@ class _ReportsTabState extends State<_ReportsTab> {
           })
           .inFilter('id', _selected.toList());
       if (!mounted) return;
-      setState(() => _selected.clear());
+      setState(() {
+        _selected.clear();
+        _selectMode = false;
+      });
       await _loadReports();
     } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Update failed: $error')));
+      _snack('Update failed: $error');
     }
   }
 
@@ -357,7 +419,7 @@ class _ReportsTabState extends State<_ReportsTab> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reject reports'),
+        title: const Text('Dismiss reports'),
         content: TextField(
           controller: controller,
           maxLines: 3,
@@ -373,7 +435,7 @@ class _ReportsTabState extends State<_ReportsTab> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reject'),
+            child: const Text('Dismiss'),
           ),
         ],
       ),
@@ -384,190 +446,237 @@ class _ReportsTabState extends State<_ReportsTab> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadReports();
+  Map<String, dynamic>? _activeReport() {
+    for (final r in _reports) {
+      if (r['id'].toString() == _activeId) return r;
+    }
+    return null;
+  }
+
+  void _onTapReport(Map<String, dynamic> item, bool split) {
+    final id = item['id'].toString();
+    if (_selectMode) {
+      setState(() {
+        if (!_selected.remove(id)) _selected.add(id);
+      });
+      return;
+    }
+    setState(() => _activeId = id);
+    if (split) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReportDetailScreen(
+          report: item,
+          onSetStatus: (status, note) => _setStatus(item, status, note),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _selected.isEmpty
-          ? null
-          : AppBar(
-              title: Text('${_selected.length} selected'),
-              actions: [
-                TextButton(
-                  onPressed: () => _bulkUpdateStatus('fixed'),
-                  child: const Text('Mark fixed'),
-                ),
-                TextButton(
-                  onPressed: _showRejectDialog,
-                  child: const Text('Reject'),
-                ),
-              ],
-            ),
-      body: RefreshIndicator(
-        onRefresh: _loadReports,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _reports.isEmpty
-            ? const Center(child: Text('No reports in the queue.'))
-            : ListView.builder(
-                itemCount: _reports.length,
-                itemBuilder: (context, index) {
-                  final item = _reports[index];
-                  final selected = _selected.contains(item['id'].toString());
-                  return CheckboxListTile(
-                    value: selected,
-                    onChanged: (value) {
-                      setState(() {
-                        final id = item['id'].toString();
-                        if (value == true) {
-                          _selected.add(id);
-                        } else {
-                          _selected.remove(id);
-                        }
-                      });
-                    },
-                    title: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            (item['category'] ?? 'General').toString(),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            (item['message'] ?? '').toString(),
-                            maxLines: 6,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    subtitle: Text(
-                      '${item['user_id'] ?? 'unknown'} • ${_formatAge(item['created_at'])}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    secondary: TextButton(
-                      onPressed: () => _showReportDetails(item),
-                      child: const Text('View'),
-                    ),
-                  );
-                },
+    return Material(
+      color: AdminColors.bg,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final split = constraints.maxWidth >= _splitBreakpoint;
+          final listPane = _buildListPane(split);
+          if (!split) return listPane;
+
+          final current = _activeReport();
+          return Row(
+            children: [
+              SizedBox(width: 400, child: listPane),
+              VerticalDivider(width: 1, color: AdminColors.border),
+              Expanded(
+                child: current == null
+                    ? _detailPlaceholder()
+                    : ReportDetailView(
+                        key: ValueKey(current['id']),
+                        report: current,
+                        onSetStatus: (status, note) =>
+                            _setStatus(current, status, note),
+                      ),
               ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  String _formatAge(dynamic value) {
-    if (value == null) return 'just now';
-    try {
-      final date = DateTime.parse(value.toString());
-      final diff = DateTime.now().difference(date);
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-      if (diff.inHours < 24) return '${diff.inHours}h';
-      if (diff.inDays < 7) return '${diff.inDays}d';
-      return '${(diff.inDays / 7).floor()}w';
-    } catch (_) {
-      return 'just now';
+  Widget _detailPlaceholder() {
+    if (_loading && _reports.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
     }
-  }
-
-  Future<void> _showReportDetails(Map<String, dynamic> item) async {
-    final controller = TextEditingController();
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Report details'),
-        content: SizedBox(
-          width: 360,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Category: ${item['category'] ?? 'General'}'),
-                const SizedBox(height: 8),
-                Text('Language: ${item['language'] ?? '-'}'),
-                const SizedBox(height: 8),
-                Text('Content ID: ${item['content_id'] ?? '-'}'),
-                const SizedBox(height: 12),
-                const Text('Message:'),
-                const SizedBox(height: 6),
-                Text((item['message'] ?? '').toString()),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Review note',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Mark fixed'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Reject'),
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.fact_check_outlined, size: 40, color: AdminColors.border),
+          const SizedBox(height: 10),
+          Text(
+            _reports.isEmpty ? 'Nothing to review' : 'Select a report to review',
+            style: TextStyle(color: AdminColors.textSecondary),
           ),
         ],
       ),
     );
+  }
 
-    if (result == true) {
-      await Supabase.instance.client
-          .from('content_reports')
-          .update({
-            'status': 'fixed',
-            'reviewed_at': DateTime.now().toIso8601String(),
-            'review_notes': controller.text.trim().isEmpty
-                ? '(bulk)'
-                : controller.text.trim(),
-          })
-          .eq('id', item['id']);
-      await _loadReports();
-    } else if (result == false) {
-      final note = controller.text.trim();
-      await Supabase.instance.client
-          .from('content_reports')
-          .update({
-            'status': 'rejected',
-            'reviewed_at': DateTime.now().toIso8601String(),
-            'review_notes': note.isEmpty ? 'Rejected' : note,
-          })
-          .eq('id', item['id']);
-      await _loadReports();
+  Widget _buildListPane(bool split) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildFilterBar(),
+        if (_selectMode) _buildBulkBar(),
+        Divider(height: 1, color: AdminColors.border),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadReports,
+            child: _buildList(split),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterBar() {
+    const options = <MapEntry<String?, String>>[
+      MapEntry<String?, String>('new', 'Pending'),
+      MapEntry<String?, String>('fixed', 'Resolved'),
+      MapEntry<String?, String>('rejected', 'Dismissed'),
+      MapEntry<String?, String>(null, 'All'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final o in options)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(o.value),
+                        selected: _filter == o.key,
+                        showCheckmark: false,
+                        onSelected: (_) => _setFilter(o.key),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: _selectMode ? 'Done' : 'Select several',
+            icon: Icon(_selectMode ? Icons.close : Icons.checklist_rounded),
+            onPressed: () => setState(() {
+              _selectMode = !_selectMode;
+              if (!_selectMode) _selected.clear();
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBulkBar() {
+    final none = _selected.isEmpty;
+    return Container(
+      color: AdminColors.blue.withValues(alpha: 0.06),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Row(
+        children: [
+          Text(
+            '${_selected.length} selected',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AdminColors.textPrimary,
+            ),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: none ? null : () => _bulkUpdateStatus('fixed'),
+            child: const Text('Resolve'),
+          ),
+          TextButton(
+            onPressed: none ? null : _showRejectDialog,
+            child: Text(
+              'Dismiss',
+              style: TextStyle(color: none ? null : AdminColors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _emptyText() {
+    switch (_filter) {
+      case 'new':
+        return 'No pending reports.';
+      case 'fixed':
+        return 'No resolved reports.';
+      case 'rejected':
+        return 'No dismissed reports.';
+      default:
+        return 'No reports yet.';
     }
   }
-}
 
+  Widget _buildList(bool split) {
+    if (_loading && _reports.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: 240, child: Center(child: CircularProgressIndicator())),
+        ],
+      );
+    }
+    if (_reports.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(
+            height: 240,
+            child: Center(
+              child: Text(
+                _emptyText(),
+                style: TextStyle(color: AdminColors.textSecondary),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: _reports.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: AdminColors.border),
+      itemBuilder: (context, index) {
+        final item = _reports[index];
+        final id = item['id'].toString();
+        return ReportListTile(
+          report: item,
+          selected: split && !_selectMode && id == _activeId,
+          selectMode: _selectMode,
+          checked: _selected.contains(id),
+          onTap: () => _onTapReport(item, split),
+          onLongPress: () => setState(() {
+            _selectMode = true;
+            _selected.add(id);
+          }),
+        );
+      },
+    );
+  }
+}
 // ─────────────────────────────────────────────
 // Daily tab
 // ─────────────────────────────────────────────
@@ -832,4 +941,38 @@ class _ContributionsTabState extends State<_ContributionsTab> {
       return 'just now';
     }
   }
+}
+
+// ─────────────────────────────────────────────
+// Direct entry points (used by the admin dashboard)
+// ─────────────────────────────────────────────
+
+class DailyManagementScreen extends StatelessWidget {
+  const DailyManagementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Daily')),
+    body: const _DailyContentTab(),
+  );
+}
+
+class ReportsManagementScreen extends StatelessWidget {
+  const ReportsManagementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Reports')),
+    body: const _ReportsTab(),
+  );
+}
+
+class ContributionsManagementScreen extends StatelessWidget {
+  const ContributionsManagementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Contributions')),
+    body: const _ContributionsTab(),
+  );
 }
