@@ -49,6 +49,12 @@ class LessonVocabularyService {
   // ─────────────────────────────────────────────
   // Write — admin CRUD
   // ─────────────────────────────────────────────
+  /// Server validates every row and resolves existing Storage paths atomically.
+  Future<void> commitImportRows(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty || rows.length > 25) throw ArgumentError('Batch must contain 1–25 records.');
+    await supabase.rpc('commit_vocabulary_import', params: {'p_rows': rows});
+  }
+
   Future<void> add(LessonVocabulary vocab) async {
     // toSupabase() does not emit 'id', so insert lets Postgres generate it.
     await supabase.from('lesson_vocabulary').insert(vocab.toSupabase());
