@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/lesson_vocab_service.dart';
+import '../widgets/content_workspace_metrics.dart';
 import 'package:kohntri_os_hq/screens/admin/themes_management_screen.dart';
 import 'package:kohntri_os_hq/services/language_question_service.dart';
 import 'package:kohntri_os_hq/utils/connectivity_helper.dart';
@@ -22,10 +24,10 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
   Map<String, int> _languageCounts = {};
   Map<String, int> _themeCounts = {};
   int _totalLangQuestions = 0;
+  List<Map<String,dynamic>>? _coverageRows;
   bool _isLoading = true;
   String _searchQuery = '';
 
-  static const _accent = Color(0xFFC0392B);
 
   @override
   void initState() {
@@ -50,15 +52,18 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final languagesFuture = _langService.getLanguages();
       final countsFuture = _langService.getLanguageCounts();
       final themeCountsFuture = _langService.getThemeCountsByLanguage();
+      final coverageFuture = LessonVocabularyService().contentMetrics().then<List<Map<String,dynamic>>?>((v)=>v,onError:(Object e,StackTrace s)=>null);
 
       final languages = await languagesFuture;
       final counts = await countsFuture;
       final themeCounts = await themeCountsFuture;
+      final coverage = await coverageFuture;
 
       languages.sort(
         (a, b) => (a['name'] as String).compareTo(b['name'] as String),
@@ -66,6 +71,7 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
 
       if (!mounted) return;
       setState(() {
+        _coverageRows = coverage;
         _languages = languages;
         _languageCounts = counts;
         _themeCounts = themeCounts;
@@ -74,7 +80,7 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() { _isLoading = false; _coverageRows = null; });
       debugPrint('$e');
     }
   }
@@ -213,8 +219,8 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
         title: const Text('Delete Language'),
         content: Text(
           count > 0
-              ? 'Language "$name" has $count question(s). Deleting it will also delete all associated themes and questions. Are you sure?'
-              : 'Delete language "$name"?',
+              ? 'Language "$name" has $count question(s). Deleting may remove associated themes, questions and lesson vocabulary. Stored media will not be automatically deleted. Continue?'
+              : 'Delete language "$name" and its associated content? Stored media will not be automatically deleted.',
         ),
         actions: [
           TextButton(
@@ -294,254 +300,54 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredLanguages;
-
+    final rows = _coverageRows;
+    final all = ContentCoverage.fromRows(rows ?? []);
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      appBar: AppBar(
-        title: const Text('Languages'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Refresh',
-          ),
-        ],
+      appBar: AppBar(title:const Text('Languages'),actions:[
+        IconButton(onPressed:_isLoading?null:_loadData,icon:const Icon(Icons.refresh),tooltip:'Refresh'),
+      ]),
+      floatingActionButton:FloatingActionButton.extended(onPressed:_isLoading?null:_addLanguage,
+        icon:const Icon(Icons.add),label:const Text('Add language')),
+      body:_isLoading?const Center(child:CircularProgressIndicator()):RefreshIndicator(
+        onRefresh:_loadData,
+        child:ListView(padding:const EdgeInsets.fromLTRB(16,12,16,100),children:[
+          WorkspaceMetrics(values:{
+            'Languages':'${_languages.length}', 'Themes':'${rows==null?_themeCounts.values.fold(0,(a,b)=>a+b):all.themes}',
+            'Questions':'${rows==null?_totalLangQuestions:all.questions}', 'Vocabulary':rows==null?'—':'${all.vocabulary}',
+            'Missing media':rows==null?'—':'${all.missing}',
+          }),
+          if(rows==null) const Padding(padding:EdgeInsets.symmetric(vertical:8),child:Text('Live media metrics unavailable. Refresh when online.')),
+          const SizedBox(height:16),
+          TextField(controller:_searchController,onChanged:(v)=>setState(()=>_searchQuery=v.trim()),
+            decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:'Search languages…',
+              border:const OutlineInputBorder(),suffixIcon:IconButton(icon:const Icon(Icons.clear),onPressed:(){
+                _searchController.clear();setState(()=>_searchQuery='');
+              }))),
+          const SizedBox(height:12),
+          if(filtered.isEmpty) const Padding(padding:EdgeInsets.all(24),child:Center(child:Text('No matching languages.'))),
+          for(final lang in filtered) _languageCard(context,lang,rows),
+        ]),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addLanguage,
-        backgroundColor: _accent,
-        icon: const Icon(Icons.add),
-        label: const Text('Add language'),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Summary
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.red.shade700, Colors.red.shade400],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.language, color: Colors.white, size: 26),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Total language questions',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '$_totalLangQuestions',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Search
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (v) =>
-                        setState(() => _searchQuery = v.trim()),
-                    decoration: InputDecoration(
-                      hintText: 'Search languages…',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchQuery.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 0,
-                      ),
-                    ),
-                  ),
-                ),
-
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: Row(
-                    children: [
-                      Text(
-                        '${filtered.length} language${filtered.length == 1 ? '' : 's'}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                Expanded(
-                  child: filtered.isEmpty
-                      ? Center(
-                          child: Text(
-                            _searchQuery.isNotEmpty
-                                ? 'No languages match “$_searchQuery”.'
-                                : 'No languages yet.\nTap “Add language” to create one.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: _loadData,
-                          child: ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final lang = filtered[index];
-                              final id = lang['id'] as String;
-                              final name = lang['name'] as String;
-                              final questionCount =
-                                  _languageCounts[name] ?? 0;
-                              final themeCount = _themeCounts[id] ?? 0;
-                              final isPending = id.startsWith('pending_');
-
-                              return Material(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: isPending
-                                      ? null
-                                      : () => _openThemes(id, name),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Colors.grey.shade200,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 20,
-                                          backgroundColor:
-                                              _accent.withOpacity(0.12),
-                                          child: Text(
-                                            name.isNotEmpty
-                                                ? name[0].toUpperCase()
-                                                : '?',
-                                            style: const TextStyle(
-                                              color: _accent,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Flexible(
-                                                    child: Text(
-                                                      name,
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        fontSize: 15,
-                                                      ),
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                  if (isPending) ...[
-                                                    const SizedBox(width: 6),
-                                                    const Icon(
-                                                      Icons.sync,
-                                                      size: 16,
-                                                      color: Colors.orange,
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$themeCount theme${themeCount == 1 ? '' : 's'}  ·  $questionCount question${questionCount == 1 ? '' : 's'}',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (!isPending) ...[
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.delete_outline,
-                                              color: Colors.redAccent,
-                                              size: 22,
-                                            ),
-                                            tooltip: 'Delete',
-                                            onPressed: () =>
-                                                _deleteLanguage(lang),
-                                          ),
-                                          const Icon(
-                                            Icons.chevron_right,
-                                            color: Colors.grey,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                ),
-              ],
-            ),
     );
+  }
+
+  Widget _languageCard(BuildContext context,Map<String,dynamic> lang,List<Map<String,dynamic>>? rows) {
+    final id=lang['id'] as String,name=lang['name'] as String;
+    final pending=id.startsWith('pending_');
+    final stats=ContentCoverage.fromRows((rows??[]).where((r)=>r['language_id']==id));
+    return Card(margin:const EdgeInsets.only(bottom:10),child:Padding(padding:const EdgeInsets.all(12),child:Column(children:[
+      ListTile(contentPadding:EdgeInsets.zero,
+        leading:CircleAvatar(child:Text(name.isEmpty?'?':name[0].toUpperCase())),
+        title:Text(name,style:const TextStyle(fontWeight:FontWeight.w700)),
+        subtitle:Text('${rows==null?_themeCounts[id]??0:stats.themes} themes · ${rows==null?_languageCounts[name]??0:stats.questions} questions'
+          '${rows==null||pending?"":" · ${stats.vocabulary} words"}${pending?" · Pending sync":""}'),
+        onTap:pending?null:()=>_openThemes(id,name),
+        trailing:pending?const Icon(Icons.sync):Row(mainAxisSize:MainAxisSize.min,children:[
+          TextButton.icon(onPressed:()=>_openThemes(id,name),icon:const Icon(Icons.chevron_right),label:const Text('Themes')),
+          PopupMenuButton<String>(tooltip:'Language actions',onSelected:(v){if(v=='delete')_deleteLanguage(lang);},
+            itemBuilder:(_)=>const [PopupMenuItem(value:'delete',child:Text('Delete language…'))]),
+        ])),
+      if(rows!=null&&!pending) CoverageLines(coverage:stats),
+    ])));
   }
 }

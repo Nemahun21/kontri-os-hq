@@ -14,7 +14,7 @@ class LessonVocabularyService {
     String? themeId,
     String? difficulty,
   }) async {
-    var query = supabase.from('lesson_vocabulary').select();
+    var query = supabase.from('lesson_vocabulary').select().eq('content_type',contentType);
 
     if (contentType == 'adventure') {
       if (category != null) query = query.eq('category', category);
@@ -60,13 +60,26 @@ class LessonVocabularyService {
 
   Future<Map<String, dynamic>> checkFastDraft({
     required String themeId, required String term, required String definition,
-    required String? slug, required List<String> paths,
+    required String? slug, required List<String> paths, String? editingId,
   }) async {
-    final response = await supabase.rpc('check_vocabulary_draft', params: {
+    final response = await supabase.rpc(editingId == null ? 'check_vocabulary_draft' : 'check_vocabulary_edit_draft', params: {
       'p_theme': themeId, 'p_term': term, 'p_definition': definition,
       'p_slug': slug, 'p_paths': paths,
+      if (editingId != null) 'p_id': editingId,
     });
     return Map<String, dynamic>.from(response as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> contentMetrics() async {
+    final result = await supabase.rpc('hq_language_content_metrics');
+    return List<Map<String,dynamic>>.from(result as List);
+  }
+
+  Future<void> saveStudioEdit(LessonVocabulary original, Map<String,dynamic> draft) async {
+    final result = await supabase.rpc('hq_edit_vocabulary', params: {
+      'p_id': original.id, 'p_expected': original.toSupabase(), 'p_draft': draft,
+    });
+    if (result != original.id) throw StateError('Unexpected edit result. Refresh before retrying.');
   }
 
   Future<void> add(LessonVocabulary vocab) async {

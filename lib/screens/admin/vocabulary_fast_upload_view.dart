@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../controllers/vocabulary_draft_controller.dart';
+import '../../models/lesson_vocab.dart';
 import '../../services/lesson_vocab_service.dart';
 import '../../widgets/vocabulary_asset_drop_zone.dart';
 import '../../widgets/vocabulary_live_preview.dart';
@@ -8,7 +9,8 @@ import '../../widgets/vocabulary_shared_image_picker.dart';
 
 class VocabularyFastUploadView extends StatefulWidget {
   final String? initialThemeId;
-  const VocabularyFastUploadView({super.key, this.initialThemeId});
+  final LessonVocabulary? existing;
+  const VocabularyFastUploadView({super.key, this.initialThemeId, this.existing});
   @override
   State<VocabularyFastUploadView> createState() => _VocabularyFastUploadViewState();
 }
@@ -20,12 +22,14 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
   final _termFocus = FocusNode();
   List<Map<String, dynamic>> _languages = [], _themes = [];
   String? _languageId;
-  bool _loading = true, _confirming = false;
+  bool _loading = true, _confirming = false, _allowClose = false;
   String? _loadError;
   @override
   void initState() {
     super.initState();
-    _draft = VocabularyDraftController(Supabase.instance.client, LessonVocabularyService());
+    _draft = VocabularyDraftController(Supabase.instance.client, LessonVocabularyService(), original: widget.existing);
+    _term.text = _draft.term; _definition.text = _draft.definition;
+    _pronunciation.text = _draft.pronunciation; _example.text = _draft.example; _emoji.text = _draft.emoji;
     _loadScopes();
   }
   Future<void> _loadScopes() async {
@@ -48,9 +52,9 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       _languages.sort((a,b) => a['name'].toString().compareTo(b['name'].toString()));
       _themes.sort((a,b) => a['name'].toString().compareTo(b['name'].toString()));
       for (final theme in _themes) {
-        if (theme['id'].toString() == widget.initialThemeId) {
+        if (theme['id'].toString() == (widget.existing?.themeId ?? widget.initialThemeId)) {
           _languageId = theme['language_type_id'].toString();
-          _draft.selectTheme(widget.initialThemeId, _code); break;
+          _draft.selectTheme(widget.existing?.themeId ?? widget.initialThemeId, _code); break;
         }
       }
     } catch (e) { if (mounted) _loadError = e.toString(); }
@@ -77,19 +81,20 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
     setState(() => _confirming = true);
     try {
       final approved = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
-        title: const Text('Publish this vocabulary?'),
+        title: Text(_draft.isEdit ? 'Save changes to this vocabulary?' : 'Publish this vocabulary?'),
         content: Text('${_draft.term} — ${_draft.definition}\n'
           '${_draft.sameTerm ? "This term already exists in this theme. Confirm this is a distinct meaning.\n" : ""}'
           '${_draft.allowMissing ? "Missing media is explicitly allowed.\n" : ""}'
-          'Existing content and files will not be overwritten.'),
+          '${_draft.isEdit ? "Only this record will be updated; old media files remain untouched." : "Existing content and files will not be overwritten."}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context,false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context,true), child: const Text('Publish & Next')),
+          FilledButton(onPressed: () => Navigator.pop(context,true), child: Text(_draft.isEdit ? 'Save changes' : 'Publish & Next')),
         ],
       ));
       if (approved != true || !mounted || !_draft.canPublish) return;
       await _draft.publish();
       if (!mounted) return;
+      if (_draft.isEdit) { _allowClose=true; Navigator.pop(context,true); return; }
       for (final field in [_term,_definition,_pronunciation,_example,_emoji]) { field.clear(); }
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vocabulary saved. Ready for next entry.')));
     } catch (e) {
@@ -126,7 +131,7 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
           isExpanded: true, value: _languageId, hint: const Text('Select language'),
           items: [for (final l in _languages) DropdownMenuItem(value: l['id'].toString(),
             child: Text(l['name'].toString(), overflow: TextOverflow.ellipsis))],
-          onChanged: !enabled ? null : (id) {
+          onChanged: !enabled || _draft.isEdit ? null : (id) {
             setState(() => _languageId = id); _draft.selectTheme(null, _code);
           },
         ))),
@@ -136,7 +141,7 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
           isExpanded: true, value: _draft.themeId, hint: const Text('Select theme'),
           items: [for (final t in themes) DropdownMenuItem(value: t['id'].toString(),
             child: Text(t['name'].toString(), overflow: TextOverflow.ellipsis))],
-          onChanged: !enabled || _languageId == null ? null : (id) => _draft.selectTheme(id, _code),
+          onChanged: !enabled || _draft.isEdit || _languageId == null ? null : (id) => _draft.selectTheme(id, _code),
         ))),
       const SizedBox(height: 10),
       _field('Term *', _term, enabled, focus: _termFocus, maxLength: 500),
@@ -144,14 +149,14 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       _field('Pronunciation', _pronunciation, enabled),
       _field('Example', _example, enabled, lines: 2),
       _field('Emoji (optional)', _emoji, enabled),
-      VocabularyAssetDropZone(audio: false, enabled: enabled, selectedName: _draft.image?.name ?? _draft.sharedImagePath?.split('/').last,
+      VocabularyAssetDropZone(audio: false, enabled: enabled, selectedName: _draft.selectedImageName,
         onFile: (file) => _draft.setMedia(file,isAudio:false), onRemove: () => _draft.removeMedia(false)),
       OutlinedButton.icon(onPressed: enabled ? _chooseSharedImage : null,
         icon: const Icon(Icons.photo_library_outlined), label: const Text('Reuse Existing Image')),
       if (_draft.sharedImagePath != null)
         const Text('Shared image selected — existing file will be linked, not uploaded.'),
       const SizedBox(height: 12),
-      VocabularyAssetDropZone(audio: true, enabled: enabled, selectedName: _draft.audio?.name ?? _draft.reusedAudioPath?.split('/').last,
+      VocabularyAssetDropZone(audio: true, enabled: enabled, selectedName: _draft.selectedAudioName,
         onFile: (file) => _draft.setMedia(file,isAudio:true), onRemove: () => _draft.removeMedia(true)),
       if (_draft.convertingAudio) const Text('Converting audio to MP3…'),
       if (_draft.audio?.convertedToMp3 == true)
@@ -220,17 +225,30 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       OutlinedButton(onPressed: enabled && d.themeId != null ? d.schedule : null,
         child: const Text('Revalidate')),
       FilledButton.icon(onPressed: enabled && d.canPublish ? _publish : null,
-        icon: const Icon(Icons.cloud_upload), label: Text(d.publishing ? 'Publishing…' : 'Publish & Next')),
+        icon: const Icon(Icons.cloud_upload), label: Text(d.publishing ? 'Saving…' : d.isEdit ? 'Save changes' : 'Publish & Next')),
     ]);
   }
+  Future<void> _close() async {
+    if (_draft.publishing || _draft.reading || _confirming) return;
+    final discard = !_draft.hasUnsavedChanges || await showDialog<bool>(
+      context:context,builder:(ctx)=>AlertDialog(title:const Text('Discard unsaved changes?'),
+        content:const Text('Nothing in this draft will be published. Existing records and media remain unchanged.'),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Keep editing')),
+          FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Discard'))])) == true;
+    if(!mounted || !discard)return;
+    _allowClose=true;
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(animation: _draft, builder: (context, _) {
       final enabled = !_draft.publishing && !_draft.reading && !_confirming;
-      return PopScope(canPop: !_draft.publishing && !_draft.reading && !_confirming, child: Scaffold(
-        appBar: AppBar(title: const Text('Fast Upload'), actions: [
-          TextButton(onPressed: enabled ? () => Navigator.pop(context) : null,
-            child: const Text('Bulk Import')),
+      return PopScope(canPop: _allowClose || (enabled && !_draft.hasUnsavedChanges),
+        onPopInvokedWithResult: (didPop,_) { if(!didPop && enabled) _close(); }, child: Scaffold(
+        appBar: AppBar(title: Text(_draft.isEdit ? 'Edit vocabulary' : 'Vocabulary Studio'), actions: [
+          TextButton(onPressed: enabled ? _close : null,
+            child: const Text('Close')),
         ]),
         body: _loading ? const Center(child: CircularProgressIndicator())
           : _loadError != null ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [

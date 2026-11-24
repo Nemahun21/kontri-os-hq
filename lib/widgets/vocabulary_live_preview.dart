@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../controllers/vocabulary_draft_controller.dart';
-import '../services/vocabulary_asset_service.dart';
 
 class VocabularyLivePreview extends StatefulWidget {
   final VocabularyDraftController draft;
@@ -25,9 +23,8 @@ class _VocabularyLivePreviewState extends State<VocabularyLivePreview> {
       await _player.stop();
       if (d.audio != null) {
         await _player.play(BytesSource(d.audio!.bytes, mimeType: 'audio/mpeg'));
-      } else if (d.hasAudio && d.audioPath != null) {
-        final url = Supabase.instance.client.storage.from(VocabularyAssetService.bucket).getPublicUrl(d.audioPath!);
-        await _player.play(UrlSource(url));
+      } else if (d.playbackAudioUrl != null) {
+        await _player.play(UrlSource(d.playbackAudioUrl!));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -58,10 +55,12 @@ class _VocabularyLivePreviewState extends State<VocabularyLivePreview> {
             tooltip: 'Play pronunciation'),
           IconButton(onPressed: () => _player.stop(), icon: const Icon(Icons.stop), tooltip: 'Stop audio'),
         ]),
-        const Divider(), const Text('Generated file_slug'),
-        SelectableText(d.slug ?? 'Enter term and definition'),
-        if (d.imagePath != null) SelectableText(d.imagePath!),
-        if (d.audioPath != null) SelectableText(d.audioPath!),
+        const Divider(),
+        ExpansionTile(title: const Text('Asset details'), children: [
+          SelectableText(d.slug ?? 'Enter term and definition'),
+          if (d.imagePath != null) SelectableText(d.imagePath!),
+          if (d.audioPath != null) SelectableText(d.audioPath!),
+        ]),
       ])));
   }
 }

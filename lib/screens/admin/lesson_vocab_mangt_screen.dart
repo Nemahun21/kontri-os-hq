@@ -1,4 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'vocabulary_fast_upload_view.dart';
+import '../../widgets/content_workspace_metrics.dart';
 import 'package:kohntri_os_hq/models/lesson_vocab.dart';
 import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 
@@ -30,6 +34,10 @@ class _LessonVocabularyManagementScreenState
   bool _isLoading = true;
 
   String _selectedDifficulty = 'easy';
+  String _search = '', _mediaFilter = 'all';
+  String? _loadError, _playingId;
+  final _audioPlayer = AudioPlayer();
+  StreamSubscription<void>? _completeSub;
 
   bool get _isAdventure => widget.contentType == 'adventure';
   bool get _isLanguage => widget.contentType == 'language';
@@ -37,41 +45,73 @@ class _LessonVocabularyManagementScreenState
   @override
   void initState() {
     super.initState();
+    _completeSub = _audioPlayer.onPlayerComplete.listen((_) {
+      if(mounted) setState(()=>_playingId=null);
+    });
     _load();
   }
 
+  @override
+  void dispose() { _completeSub?.cancel(); _audioPlayer.dispose(); super.dispose(); }
+
   Future<void> _load() async {
-    setState(() => _isLoading = true);
+    if (!mounted) return;
+    setState(() { _isLoading = true; _loadError = null; });
     try {
       final items = await _service.getVocabulary(
         contentType: widget.contentType,
         category: _isAdventure ? widget.category : null,
         themeId: _isLanguage ? widget.themeId : null,
       );
+      if (!mounted) return;
       setState(() {
         _items = items;
         _isLoading = false;
       });
     } catch (e) {
-      print('Error: $e');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() { _loadError=e.toString(); _isLoading=false; });
     }
   }
 
+  static bool _linked(String? url)=>url!=null&&url.trim().isNotEmpty;
+  List<LessonVocabulary> get _scopedItems => _isLanguage?_items:_items.where((i)=>i.difficulty==_selectedDifficulty).toList();
   List<LessonVocabulary> get _filteredItems {
-    if (_isLanguage) return _items;
-    return _items.where((i) => i.difficulty == _selectedDifficulty).toList();
+    final q=_search.toLowerCase();
+    return _scopedItems.where((i){
+      final image=_linked(i.imageUrl),audio=_linked(i.audioUrl);
+      final text='${i.term} ${i.definition} ${i.pronunciation??""} ${i.example??""}'.toLowerCase();
+      return text.contains(q) && (_mediaFilter=='all'||(_mediaFilter=='image'&&!image)||
+        (_mediaFilter=='audio'&&!audio)||(_mediaFilter=='complete'&&image&&audio));
+    }).toList();
   }
-
-  void _addItem() => _showEditor();
-  void _editItem(LessonVocabulary item) => _showEditor(item: item);
+  Future<void> _openStudio({LessonVocabulary? item}) async {
+    await _audioPlayer.stop();
+    if(!mounted)return;
+    setState(()=>_playingId=null);
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>VocabularyFastUploadView(
+      initialThemeId:widget.themeId,existing:item)));
+    if(mounted) await _load();
+  }
+  void _addItem() { if(_isLanguage) { _openStudio(); } else { _showEditor(); } }
+  void _editItem(LessonVocabulary item) { if(_isLanguage) { _openStudio(item:item); } else { _showEditor(item:item); } }
+  Future<void> _play(LessonVocabulary item) async {
+    try {
+      await _audioPlayer.stop();
+      if(!mounted)return;
+      if(_playingId==item.id){setState(()=>_playingId=null);return;}
+      setState(()=>_playingId=item.id);
+      await _audioPlayer.play(UrlSource(item.audioUrl!));
+    } catch(e) {
+      if(mounted){setState(()=>_playingId=null);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Playback failed: $e')));}
+    }
+  }
 
   Future<void> _deleteItem(LessonVocabulary item) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete'),
-        content: Text('Delete "${item.term}"?'),
+        content: Text('Delete "${item.term}"? The vocabulary record will be removed; its media files remain available for reuse.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -84,9 +124,9 @@ class _LessonVocabularyManagementScreenState
         ],
       ),
     );
-    if (confirm == true) {
-      await _service.delete(item.id);
-      _load();
+    if (confirm == true && mounted) {
+      try { await _service.delete(item.id); if(mounted) await _load(); }
+      catch(e) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Delete failed: $e'))); }
     }
   }
 
@@ -327,372 +367,93 @@ class _LessonVocabularyManagementScreenState
     if (mounted) await _load();
   }
 
-  // ---------------------- BUILD ----------------------
   @override
   Widget build(BuildContext context) {
-    const accent = Color(0xFF3498DB);
-
+    final scoped=_scopedItems,items=_filteredItems;
+    final images=scoped.where((i)=>_linked(i.imageUrl)).length;
+    final audio=scoped.where((i)=>_linked(i.audioUrl)).length;
+    final complete=scoped.where((i)=>_linked(i.imageUrl)&&_linked(i.audioUrl)).length;
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Lesson Cards: ${widget.title}'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        actions: [
-          IconButton(
-  icon: const Icon(Icons.upload_file_rounded),
-  tooltip: 'Bulk asset import',
-  onPressed: _isLoading ? null : _importFromFile,
-),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _load,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addItem,
-        child: const Icon(Icons.add),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Difficulty tabs – ADVENTURE ONLY
-                if (_isAdventure) _buildDifficultyTabs(),
-                // Table
-                Expanded(
-                  child: _filteredItems.isEmpty
-                      ? _buildEmptyState()
-                      : _buildTable(accent),
-                ),
-              ],
-            ),
+      appBar:AppBar(title:Text('Lesson Cards: ${widget.title}'),actions:[
+        IconButton(onPressed:_isLoading?null:_importFromFile,icon:const Icon(Icons.upload_file),tooltip:'Bulk import'),
+        IconButton(onPressed:_isLoading?null:_load,icon:const Icon(Icons.refresh),tooltip:'Refresh'),
+      ]),
+      body:_isLoading?const Center(child:CircularProgressIndicator()):Column(children:[
+        if(_loadError!=null) Padding(padding:const EdgeInsets.all(12),child:Text('Load failed: $_loadError',style:TextStyle(color:Theme.of(context).colorScheme.error))),
+        Expanded(child:ListView(padding:const EdgeInsets.all(16),children:[
+          if(_isAdventure) Wrap(spacing:8,children:[
+            for(final d in ['easy','medium','hard']) ChoiceChip(label:Text(d),selected:_selectedDifficulty==d,
+              onSelected:(_)=>setState(()=>_selectedDifficulty=d)),
+          ]),
+          WorkspaceMetrics(values:{'Vocabulary':_loadError==null?'${scoped.length}':'—','Images':_loadError==null?'$images':'—','Recordings':_loadError==null?'$audio':'—','Missing media':_loadError==null?'${scoped.length-complete}':'—'}),
+          const SizedBox(height:14),
+          Wrap(spacing:8,runSpacing:8,crossAxisAlignment:WrapCrossAlignment.center,children:[
+            FilledButton.icon(onPressed:_loadError==null?_addItem:null,icon:const Icon(Icons.add),label:const Text('Add vocabulary')),
+            OutlinedButton.icon(onPressed:_importFromFile,icon:const Icon(Icons.upload_file),label:const Text('Bulk import')),
+            for(final f in {'all':'All','image':'Missing image','audio':'Missing audio','complete':'Complete media'}.entries)
+              ChoiceChip(label:Text(f.value),selected:_mediaFilter==f.key,onSelected:(_)=>setState(()=>_mediaFilter=f.key)),
+          ]),
+          const SizedBox(height:12),
+          TextField(onChanged:(v)=>setState(()=>_search=v.trim()),decoration:const InputDecoration(
+            prefixIcon:Icon(Icons.search),hintText:'Search term, meaning, pronunciation…',border:OutlineInputBorder())),
+          const SizedBox(height:12),
+          Text('${items.length} of ${scoped.length} records',style:Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height:8),
+          if(items.isEmpty) const Padding(padding:EdgeInsets.all(24),child:Center(child:Text('No matching vocabulary.')))
+          else LayoutBuilder(builder:(context,constraints){
+            if(constraints.maxWidth<800) return Column(children:[for(final item in items) _compact(item)]);
+            return _table(items);
+          }),
+        ])),
+      ]),
     );
   }
 
-  Widget _buildDifficultyTabs() {
-    final difficulties = [
-      {'key': 'easy', 'label': '💡 Easy', 'color': Colors.green},
-      {'key': 'medium', 'label': '🔥 Medium', 'color': Colors.orange},
-      {'key': 'hard', 'label': '🌊 Hard', 'color': Colors.blue},
-    ];
-
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: difficulties.map((d) {
-          final key = d['key'] as String;
-          final label = d['label'] as String;
-          final color = d['color'] as Color;
-          final isSelected = _selectedDifficulty == key;
-          final count = _items.where((i) => i.difficulty == key).length;
-
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: GestureDetector(
-                onTap: () => setState(() => _selectedDifficulty = key),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? color.withOpacity(0.15)
-                        : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isSelected ? color : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                          color: isSelected ? color : Colors.grey[700],
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected ? color : Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$count',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: isSelected ? Colors.white : Colors.grey[700],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
+  Widget _thumbnail(LessonVocabulary item) {
+    final fallback=Center(child:Text(item.emoji?.isNotEmpty==true?item.emoji!:'—',style:const TextStyle(fontSize:18)));
+    return SizedBox(width:42,height:42,child:Material(color:Theme.of(context).colorScheme.surfaceContainerHighest,
+      shape:const CircleBorder(),clipBehavior:Clip.antiAlias,
+      child:InkWell(onTap:!_linked(item.imageUrl)?null:()=>showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:Text(item.term),content:Image.network(item.imageUrl!,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Text('Image unavailable')),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))])),
+        child:_linked(item.imageUrl)?Image.network(item.imageUrl!,fit:BoxFit.contain,errorBuilder:(_,__,___)=>fallback):fallback)));
   }
+  Widget _audio(LessonVocabulary item) => IconButton(
+    tooltip:!_linked(item.audioUrl)?'No recording':_playingId==item.id?'Stop recording':'Play recording',
+    color:_linked(item.audioUrl)?const Color(0xFF18794E):null,
+    onPressed:_linked(item.audioUrl)?()=>_play(item):null,
+    icon:Icon(!_linked(item.audioUrl)?Icons.volume_off_outlined:_playingId==item.id?Icons.stop_circle_outlined:Icons.volume_up_outlined));
+  Widget _actions(LessonVocabulary item)=>Row(mainAxisSize:MainAxisSize.min,children:[
+    IconButton(onPressed:_loadError==null?()=>_editItem(item):null,tooltip:'Edit vocabulary',icon:const Icon(Icons.edit_outlined)),
+    PopupMenuButton<String>(enabled:_loadError==null,tooltip:'More actions',onSelected:(v){if(v=='delete')_deleteItem(item);},
+      itemBuilder:(_)=>const [PopupMenuItem(value:'delete',child:Text('Delete vocabulary…'))]),
+  ]);
+  Widget _compact(LessonVocabulary item)=>Card(child:Padding(padding:const EdgeInsets.all(10),child:Column(
+    children:[
+      Row(children:[_thumbnail(item),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text(item.term,style:const TextStyle(fontWeight:FontWeight.w600)),Text(item.definition),
+        if(item.pronunciation?.isNotEmpty==true)Text(item.pronunciation!),
+        if(item.example?.isNotEmpty==true)Text(item.example!,maxLines:2,overflow:TextOverflow.ellipsis),
+      ]))]),
+      Row(children:[Text('Pos ${item.position}'),const Spacer(),_audio(item),_actions(item)]),
+    ])));
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.style_outlined, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            _isAdventure
-                ? 'No $_selectedDifficulty lesson cards yet.'
-                : 'No lesson cards yet.',
-            style: TextStyle(color: Colors.grey[600], fontSize: 16),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap + to add your first card.',
-            style: TextStyle(color: Colors.grey[500], fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTable(Color accent) {
-    final items = _filteredItems;
-
-    final List<String> headers;
-    final List<int> flexValues;
-
-    if (_isLanguage) {
-      headers = [
-        'Word',
-        'Translation',
-        'Pronunciation',
-        'Example',
-        'Pos',
-        'Actions',
-      ];
-      flexValues = [3, 3, 2, 4, 1, 3];
-    } else {
-      headers = ['Term', 'Definition', 'Example', 'Pos', 'Actions'];
-      flexValues = [3, 4, 4, 1, 3];
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Card(
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              color: accent.withOpacity(0.1),
-              child: Row(
-                children: [
-                  Icon(Icons.style, color: accent, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isLanguage
-                        ? 'Lesson Cards'
-                        : '${_selectedDifficulty.toUpperCase()} Lesson Cards',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: accent,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: accent,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${items.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              color: Colors.grey.shade100,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: List.generate(headers.length, (i) {
-                  return Expanded(
-                    flex: flexValues[i],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        headers[i],
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: Color(0xFF2C3E50),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-            ...items.asMap().entries.map((entry) {
-              return _buildDataRow(
-                index: entry.key,
-                item: entry.value,
-                flexValues: flexValues,
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDataRow({
-    required int index,
-    required LessonVocabulary item,
-    required List<int> flexValues,
-  }) {
-    final List<Widget> cells = [];
-
-    cells.add(Text('${index + 1}', style: const TextStyle(fontSize: 12)));
-
-    cells.add(
-      Row(
-        children: [
-          if (item.emoji != null && item.emoji!.isNotEmpty) ...[
-            Text(item.emoji!, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 6),
-          ],
-          Expanded(
-            child: Text(
-              item.term,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    cells.add(
-      Text(
-        item.definition,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ),
-    );
-
-    if (_isLanguage) {
-      cells.add(
-        Text(
-          item.pronunciation ?? '—',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            fontStyle: item.pronunciation != null
-                ? FontStyle.italic
-                : FontStyle.normal,
-            color: Colors.grey[700],
-          ),
-        ),
-      );
-    }
-
-    cells.add(
-      Text(
-        item.example ?? '—',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ),
-    );
-
-    cells.add(Text('${item.position}', style: const TextStyle(fontSize: 12)));
-
-    cells.add(
-      Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: () => _editItem(item),
-            child: Container(
-              width: 26,
-              height: 26,
-              alignment: Alignment.center,
-              child: const Icon(Icons.edit, color: Colors.blue, size: 16),
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () => _deleteItem(item),
-            child: Container(
-              width: 26,
-              height: 26,
-              alignment: Alignment.center,
-              child: const Icon(Icons.delete, color: Colors.red, size: 16),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return Container(
-      decoration: BoxDecoration(
-        color: index.isEven ? Colors.white : Colors.grey.shade50,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: List.generate(cells.length, (i) {
-          final isActionColumn = i == cells.length - 1; 
-          final child = Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: cells[i],
-          );
-
-          if (isActionColumn) {
-            return SizedBox(
-              width: 72,
-              child: child,
-            ); 
-          }
-
-          return Expanded(
-            flex: i < flexValues.length ? flexValues[i] : 1,
-            child: child,
-          );
-        }),
-      ),
-    );
+  Widget _table(List<LessonVocabulary> items) {
+    const headers=['Image','Word','Translation','Pronunciation','Example','Audio','Pos','Actions'];
+    const flex=[1,3,3,2,4,1,1,2];
+    Widget line(List<Widget> cells,{bool header=false})=>Container(
+      decoration:BoxDecoration(color:header?Theme.of(context).colorScheme.surfaceContainerHighest:null,
+        border:Border(bottom:BorderSide(color:Theme.of(context).colorScheme.outlineVariant))),
+      padding:const EdgeInsets.symmetric(vertical:6),child:Row(children:[
+        for(var i=0;i<cells.length;i++)
+          if(i==0||i==5||i==6||i==7) SizedBox(width:i==7?104:i==6?52:64,child:Center(child:cells[i]))
+          else Expanded(flex:flex[i],child:Padding(padding:const EdgeInsets.symmetric(horizontal:8),child:cells[i])),
+      ]));
+    Widget cell(String? value)=>Text(value??'—',maxLines:2,overflow:TextOverflow.ellipsis);
+    return Card(clipBehavior:Clip.antiAlias,child:Column(children:[
+      line([for(final h in headers) Text(h,style:const TextStyle(fontWeight:FontWeight.w600,fontSize:12))],header:true),
+      for(final item in items) line([_thumbnail(item),cell(item.term),cell(item.definition),
+        cell(item.pronunciation),cell(item.example),_audio(item),cell('${item.position}'),_actions(item)]),
+    ]));
   }
 }
