@@ -2,15 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:kohntri_os_hq/utils/splash_screen.dart';
 import 'package:kohntri_os_hq/screens/auth/set_new_password_screen.dart';
-import 'package:kohntri_os_hq/services/sync_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // V2 HQ must never use the live Kontrios backend.
+  const supabaseUrl = String.fromEnvironment('V2_SUPABASE_URL');
+  const supabaseKey = String.fromEnvironment('V2_SUPABASE_PUBLISHABLE_KEY');
+  if (supabaseUrl != 'https://eeeusvsefoxbgshouqjb.supabase.co' ||
+      supabaseKey.isEmpty) {
+    throw StateError('HQ V2 requires explicit Test1 staging credentials.');
+  }
   await Supabase.initialize(
-    url: 'https://ibofeppwhmyxaychgcjq.supabase.co',
-    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlib2ZlcHB3aG15eGF5Y2hnY2pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxODUxODMsImV4cCI6MjA4Nzc2MTE4M30.Q6FeUQzdMbN5wheyLzEkumUussrMa1C0CV4J6LsjB70",
+    url: supabaseUrl,
+    anonKey: supabaseKey,
     authOptions: const FlutterAuthClientOptions(
       authFlowType: AuthFlowType.pkce,
       autoRefreshToken: true,
@@ -19,9 +24,7 @@ void main() async {
 
   bool isRecoveryLink = false;
 
-  if (!kIsWeb) {
-    await SyncService().syncPendingOperations();
-  } else {
+  if (kIsWeb) {
     // Detect recovery marker BEFORE exchangeCodeForSession consumes the code
     isRecoveryLink = Uri.base.queryParameters['action'] == 'reset';
 
@@ -45,15 +48,8 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb) {
-      Connectivity().onConnectivityChanged.listen((
-        List<ConnectivityResult> result,
-      ) {
-        if (result.any((r) => r != ConnectivityResult.none)) {
-          SyncService().syncPendingOperations();
-        }
-      });
-    }
+    // Offline sync is disabled in V2 staging until staging-only local
+    // storage is isolated; never replay pending production operations.
 
     return MaterialApp(
       title: 'Kontri OS Admin',
