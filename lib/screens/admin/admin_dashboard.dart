@@ -45,6 +45,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
   final QuestionService _questionService = QuestionService();
   final LanguageQuestionService _langService = LanguageQuestionService();
 
+  // Fail safely while Test1 contains only the V2 language vertical slice.
+  // Production dashboard logic remains intact for non-staging builds.
+  bool get _isV2Staging =>
+      const String.fromEnvironment('V2_SUPABASE_URL') ==
+      'https://eeeusvsefoxbgshouqjb.supabase.co';
+  int _stagingVocabularyCount = 0;
+  int _stagingThemeCount = 0;
+  String? _stagingLanguageError;
+
   Map<String, int> _categoryCounts = {};
   int _totalQuestions = 0;
   int _totalLangQuestions = 0;
@@ -57,8 +66,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     } else {
       _loadAdminData();
     }
-    _loadCommandCentre();
-    _loadStats();
+    if (_isV2Staging) {
+      _loadStagingLanguageStats();
+    } else {
+      _loadCommandCentre();
+      _loadStats();
+    }
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 60),
       (_) => _refreshDashboard(),
@@ -98,6 +111,35 @@ class _AdminDashboardState extends State<AdminDashboard> {
       if (cached != null && mounted) {
         setState(() => _adminData = cached as Map<String, dynamic>);
       }
+    }
+  }
+
+  Future<void> _loadStagingLanguageStats() async {
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      final results = await Future.wait<List<dynamic>>([
+        Supabase.instance.client.from('language_type').select('id'),
+        Supabase.instance.client.from('language_themes').select('id'),
+        Supabase.instance.client.from('lesson_vocabulary').select('id')
+            .eq('content_type', 'language'),
+        Supabase.instance.client.from('language_questions').select('id'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _categoryCounts = {'Languages': results[0].length};
+        _stagingThemeCount = results[1].length;
+        _stagingVocabularyCount = results[2].length;
+        _totalLangQuestions = results[3].length;
+        _stagingLanguageError = null;
+        _isLoading = false;
+      });
+    } catch (error) {
+      debugPrint('V2 staging language stats unavailable: $error');
+      if (!mounted) return;
+      setState(() {
+        _stagingLanguageError = 'Language metrics temporarily unavailable';
+        _isLoading = false;
+      });
     }
   }
 
@@ -159,7 +201,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (_refreshing) return;
     _refreshing = true;
     try {
-      await Future.wait([_loadCommandCentre(), _loadStats()]);
+      if (_isV2Staging) {
+        await _loadStagingLanguageStats();
+      } else {
+        await Future.wait([_loadCommandCentre(), _loadStats()]);
+      }
     } finally {
       if (mounted) {
         setState(() => _refreshing = false);
@@ -221,6 +267,79 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ],
       ],
     );
+  }
+
+  List<Widget> _stagingSections() {
+    return [
+      const AdminSectionTitle('V2 staging · Languages'),
+      const SizedBox(height: 12),
+      if (_stagingLanguageError != null)
+        AdminCard(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_stagingLanguageError!),
+                TextButton(
+                  onPressed: _loadStagingLanguageStats,
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      _grid([
+        _DashTile(
+          icon: Icons.translate_rounded,
+          color: AdminColors.amber,
+          title: 'Languages',
+          subtitle: 'Open language and vocabulary management',
+          value: '${_categoryCounts['Languages'] ?? 0}',
+          valueLabel: 'languages',
+          onTap: () => _push(const LanguagesListScreen()),
+        ),
+        _DashTile(
+          icon: Icons.auto_stories_rounded,
+          color: AdminColors.blue2,
+          title: 'Themes',
+          subtitle: 'Across languages in Test1',
+          value: '$_stagingThemeCount',
+          valueLabel: 'themes',
+          onTap: () => _push(const LanguagesListScreen()),
+        ),
+        _DashTile(
+          icon: Icons.style_rounded,
+          color: AdminColors.green,
+          title: 'Vocabulary',
+          subtitle: 'Beginner · Intermediate · Advanced',
+          value: '$_stagingVocabularyCount',
+          valueLabel: 'words',
+          onTap: () => _push(const LanguagesListScreen()),
+        ),
+        _DashTile(
+          icon: Icons.quiz_rounded,
+          color: AdminColors.red,
+          title: 'Language quizzes',
+          subtitle: 'Staging language questions',
+          value: '$_totalLangQuestions',
+          valueLabel: 'questions',
+          onTap: () => _push(const LanguagesListScreen()),
+        ),
+      ], 2),
+      const SizedBox(height: 16),
+      const Text(
+        'Adventure, Daily and advanced analytics are not yet connected '
+        'to this staging database. Production metrics are not shown.',
+      ),
+      const SizedBox(height: 20),
+      if (_adminData?['role'] == 'super_admin')
+        OutlinedButton.icon(
+          onPressed: () => _push(const AdminApprovalsScreen()),
+          icon: const Icon(Icons.admin_panel_settings_outlined),
+          label: const Text('Admin requests'),
+        ),
+    ];
   }
 
   List<Widget> _sections({required bool desktop, required bool mobile}) {
@@ -455,7 +574,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     loading: _isLoading,
                   ),
                   const SizedBox(height: 12),
-                  if (_stats == null && _statsError != null)
+                  if (_isV2Staging)
+                    ..._stagingSections()
+                  else if (_stats == null && _statsError != null)
                     AdminCard(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
