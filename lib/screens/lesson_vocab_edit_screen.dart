@@ -88,6 +88,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_difficulty == null) return; // Never overwrite a language level with null.
     setState(() => _saving = true);
 
     try {
@@ -96,7 +97,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
         contentType: _contentType,
         category: _contentType == 'adventure' ? _category : null,
         themeId: _contentType == 'language' ? _themeId : null,
-        difficulty: _contentType == 'adventure' ? _difficulty : null,
+        difficulty: _difficulty,
         term: _termCtrl.text.trim(),
         definition: _defCtrl.text.trim(),
         pronunciation: _pronCtrl.text.trim().isEmpty
@@ -174,7 +175,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
                   _contentType = v;
                   if (v == 'language') {
                     _category = null;
-                    _difficulty = null;
+                    _difficulty ??= 'easy';
                   } else {
                     _themeId = null;
                     _category ??= widget.initialCategory;
@@ -202,22 +203,26 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
                 validator: (v) => v == null ? 'Required' : null,
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _difficulty,
-                decoration: const InputDecoration(
-                  labelText: 'Difficulty',
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'easy', child: Text('Easy')),
-                  DropdownMenuItem(value: 'medium', child: Text('Medium')),
-                  DropdownMenuItem(value: 'hard', child: Text('Hard')),
-                ],
-                onChanged: (v) => setState(() => _difficulty = v),
-                validator: (v) => v == null ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
             ],
+
+            // Store identical DB values for Adventure and Language.
+            DropdownButtonFormField<String>(
+              value: const ['easy', 'medium', 'hard'].contains(_difficulty)
+                  ? _difficulty
+                  : null,
+              decoration: const InputDecoration(
+                labelText: 'Vocabulary difficulty',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'easy', child: Text('Beginner / Easy')),
+                DropdownMenuItem(value: 'medium', child: Text('Intermediate / Medium')),
+                DropdownMenuItem(value: 'hard', child: Text('Advanced / Hard')),
+              ],
+              onChanged: (v) => setState(() => _difficulty = v),
+              validator: (v) => v == null ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
 
             // ── Language: theme id ───────────────────────
             if (!isAdventure) ...[
@@ -326,7 +331,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
               decoration: const InputDecoration(
                 labelText: 'Position',
                 helperText:
-                    'Ordering within (category · difficulty). Lowest shown first.',
+                    'Ordering within the theme. Lowest shown first.',
                 border: OutlineInputBorder(),
               ),
               validator: (v) {
