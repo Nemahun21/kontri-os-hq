@@ -5,6 +5,16 @@ import 'package:kohntri_os_hq/models/vocabulary_import_batch.dart';
 import 'package:kohntri_os_hq/services/vocabulary_import_service.dart';
 
 void main() {
+  test('shared image path is independent of language slug', () {
+    for (final slug in ['mende_example_drum', 'temne_example_drum', 'krio_example_drum']) {
+      expect(VocabularyDraftController.resolveImagePath(
+        sharedPath: 'images/drum.png', slug: slug), 'images/drum.png');
+    }
+    expect(VocabularyDraftController.resolveImagePath(
+      slug: 'mende_example_drum', localExtension: 'png'), 'images/mende_example_drum.png');
+    expect(() => VocabularyDraftController.resolveImagePath(
+      sharedPath: 'audio/mende/drum.mp3'), throwsFormatException);
+  });
   test('dropped PNG can be assigned canonical name without changing source', () async {
     final bytes = Uint8List.fromList([137,80,78,71,13,10,26,10,0,0,0,0]);
     final source = VocabularyLocalAsset('IMG_001.PNG', () async => bytes.length, () async => bytes);

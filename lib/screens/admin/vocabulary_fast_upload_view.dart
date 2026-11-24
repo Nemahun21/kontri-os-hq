@@ -4,6 +4,7 @@ import '../../controllers/vocabulary_draft_controller.dart';
 import '../../services/lesson_vocab_service.dart';
 import '../../widgets/vocabulary_asset_drop_zone.dart';
 import '../../widgets/vocabulary_live_preview.dart';
+import '../../widgets/vocabulary_shared_image_picker.dart';
 
 class VocabularyFastUploadView extends StatefulWidget {
   final String? initialThemeId;
@@ -100,6 +101,14 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       }
     }
   }
+  Future<void> _chooseSharedImage() async {
+    final path = await showDialog<String>(context: context,
+      builder: (_) => VocabularySharedImagePicker(client: Supabase.instance.client,
+        initialSearch: _definition.text.trim()));
+    if (!mounted || path == null) return;
+    _draft.selectSharedImage(path);
+  }
+
   Widget _field(String label, TextEditingController controller, bool enabled,
       {FocusNode? focus, int lines = 1, int? maxLength}) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
@@ -135,8 +144,12 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       _field('Pronunciation', _pronunciation, enabled),
       _field('Example', _example, enabled, lines: 2),
       _field('Emoji (optional)', _emoji, enabled),
-      VocabularyAssetDropZone(audio: false, enabled: enabled, selectedName: _draft.image?.name,
+      VocabularyAssetDropZone(audio: false, enabled: enabled, selectedName: _draft.image?.name ?? _draft.sharedImagePath?.split('/').last,
         onFile: (file) => _draft.setMedia(file,isAudio:false), onRemove: () => _draft.removeMedia(false)),
+      OutlinedButton.icon(onPressed: enabled ? _chooseSharedImage : null,
+        icon: const Icon(Icons.photo_library_outlined), label: const Text('Reuse Existing Image')),
+      if (_draft.sharedImagePath != null)
+        const Text('Shared image selected — existing file will be linked, not uploaded.'),
       const SizedBox(height: 12),
       VocabularyAssetDropZone(audio: true, enabled: enabled, selectedName: _draft.audio?.name,
         onFile: (file) => _draft.setMedia(file,isAudio:true), onRemove: () => _draft.removeMedia(true)),
@@ -167,7 +180,7 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       for (final path in d.sourceConflicts) Text('Source filename already exists: $path'),
       for (final path in d.existingPaths.where((p) => p == d.imagePath || p == d.audioPath))
         Text('Existing destination: $path${d.fileConflict ? "" : " — reuse available"}'),
-      if (!d.allowMissing && (d.image == null || !d.hasAudio))
+      if (!d.allowMissing && (!d.hasImage || !d.hasAudio))
         const Text('Image and pronunciation are required unless missing media is explicitly allowed.'),
       OutlinedButton(onPressed: enabled && d.themeId != null ? d.schedule : null,
         child: const Text('Revalidate')),

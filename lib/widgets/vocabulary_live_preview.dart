@@ -41,7 +41,10 @@ class _VocabularyLivePreviewState extends State<VocabularyLivePreview> {
         Text('Live flashcard preview', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
         SizedBox(height: 180, child: d.image == null
-          ? const Center(child: Icon(Icons.image_outlined, size: 64))
+          ? (d.sharedImageUrl == null
+              ? const Center(child: Icon(Icons.image_outlined, size: 64))
+              : Image.network(d.sharedImageUrl!, fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Center(child: Text('Shared image unavailable'))))
           : Image.memory(d.image!.bytes, fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => const Center(child: Text('Image cannot be decoded')))),
         Text(d.term.isEmpty ? 'Term' : d.term, textAlign: TextAlign.center,

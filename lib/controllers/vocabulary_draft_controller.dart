@@ -39,6 +39,7 @@ class VocabularyDraftController extends ChangeNotifier {
   String? themeId, languageCode;
   String term = '', definition = '', pronunciation = '', example = '', emoji = '';
   DraftMedia? image, audio;
+  String? sharedImagePath;
   bool checking = false, reading = false, publishing = false, allowMissing = false;
   bool sameTerm = false, duplicate = false, slugConflict = false, fileConflict = false;
   bool validated = false;
@@ -55,12 +56,27 @@ class VocabularyDraftController extends ChangeNotifier {
       return value.length <= 180 && VocabularyImportService.validSlug(value) ? value : null;
     } on FormatException { return null; }
   }
-  String? get imagePath => image == null || slug == null ? null : 'images/$slug.${image!.extension}';
+  String? get imagePath => resolveImagePath(sharedPath: sharedImagePath,
+      slug: slug, localExtension: image?.extension);
+  static String? resolveImagePath({String? sharedPath, String? slug, String? localExtension}) {
+    if (sharedPath != null) {
+      if (!VocabularyAssetService.validPath(sharedPath, audio: false)) {
+        throw const FormatException('Invalid shared image path.');
+      }
+      return sharedPath;
+    }
+    return slug == null || localExtension == null ? null : 'images/$slug.$localExtension';
+  }
+  bool get hasImage => image != null ||
+      (sharedImagePath != null && existingPaths.contains(sharedImagePath));
+  String? get sharedImageUrl => sharedImagePath == null ? null :
+      client.storage.from(VocabularyAssetService.bucket).getPublicUrl(sharedImagePath!);
   String? get audioPath => slug == null ? null : 'audio/$languageCode/$slug.mp3';
   bool get hasAudio => audio != null || existingPaths.contains(audioPath);
   bool get canPublish => !publishing && !reading && !checking && validated &&
       !duplicate && !slugConflict && !fileConflict && error == null && slug != null &&
-      (allowMissing || (image != null && hasAudio));
+      (sharedImagePath == null || hasImage) &&
+      (allowMissing || (hasImage && hasAudio));
 
   String? _rawPath(DraftMedia? file, bool isAudio) {
     if (file == null || file.name.contains('/') || file.name.contains('\\')) return null;
@@ -79,23 +95,31 @@ class VocabularyDraftController extends ChangeNotifier {
     final revision = ++_revision;
     validated = false; sameTerm = false; duplicate = false; slugConflict = false;
     fileConflict = false; error = null; existingPaths = {};
-    checking = themeId != null && (term.trim().isNotEmpty || image != null || audio != null);
+    checking = themeId != null && (term.trim().isNotEmpty || image != null || sharedImagePath != null || audio != null);
     _notify();
     if (checking) {
       _timer = Timer(const Duration(milliseconds: 500), () async { await _validate(revision); });
     }
   }
+  void selectSharedImage(String path) {
+    if (reading || publishing || _disposed) return;
+    if (!VocabularyAssetService.validPath(path, audio: false)) {
+      throw const FormatException('Invalid shared image path.');
+    }
+    image = null; sharedImagePath = path; schedule();
+  }
+
   Future<void> setMedia(VocabularyLocalAsset source, {required bool isAudio}) async {
     if (reading || publishing) return;
     reading = true; _notify();
     try {
       final media = await DraftMedia.load(source, audio: isAudio);
       if (_disposed) return;
-      if (isAudio) { audio = media; } else { image = media; }
+      if (isAudio) { audio = media; } else { image = media; sharedImagePath = null; }
       schedule();
     } catch (e) {
       if (!_disposed) {
-        if (isAudio) { audio = null; } else { image = null; }
+        if (isAudio) { audio = null; } else { image = null; sharedImagePath = null; }
         schedule();
         _timer?.cancel(); ++_revision; checking = false; validated = false;
         error = e.toString();
@@ -104,7 +128,7 @@ class VocabularyDraftController extends ChangeNotifier {
   }
   void removeMedia(bool isAudio) {
     if (publishing || reading) return;
-    if (isAudio) { audio = null; } else { image = null; }
+    if (isAudio) { audio = null; } else { image = null; sharedImagePath = null; }
     schedule();
   }
   Future<bool> _validate(int revision) async {
@@ -129,6 +153,11 @@ class VocabularyDraftController extends ChangeNotifier {
         }
       }
       if (_disposed || revision != _revision) return false;
+      if (sharedImagePath != null && !found.contains(sharedImagePath)) {
+        existingPaths = found; validated = false;
+        error = 'Selected shared image no longer exists. Choose another image.';
+        return false;
+      }
       existingPaths = found; sameTerm = result['same_term'] == true;
       duplicate = result['duplicate'] == true; slugConflict = result['slug_conflict'] == true;
       fileConflict = conflict; validated = true; error = null;
@@ -148,7 +177,7 @@ class VocabularyDraftController extends ChangeNotifier {
     try {
       if (!await _validate(++_revision)) throw StateError(error ?? 'Draft has a conflict.');
       if (_disposed) return;
-      if (!allowMissing && (image == null || !hasAudio)) throw StateError('Required media is missing.');
+      if (!allowMissing && (!hasImage || !hasAudio)) throw StateError('Required media is missing.');
       final target = slug!, ip = imagePath, ap = audioPath!;
       final assetService = VocabularyAssetService(client);
       assetService.setFiles([
@@ -163,6 +192,9 @@ class VocabularyDraftController extends ChangeNotifier {
         if (audio != null || existingPaths.contains(ap)) 'audio_url': ap,
       }], contentType: 'language', initialThemeId: themeId);
       final row = batch.rows.single;
+      if (sharedImagePath != null && row.image?.remote != true) {
+        throw StateError('Selected shared image is no longer available.');
+      }
       if (row.existingId != null || row.state == ImportState.existing ||
           row.state == ImportState.conflict || (!allowMissing && row.state == ImportState.missing)) {
         throw StateError('Cannot create draft: ${row.issues.join('; ')}');
@@ -174,7 +206,7 @@ class VocabularyDraftController extends ChangeNotifier {
         throw StateError(row.error ?? 'Not saved. Revalidate before retrying.');
       }
       term = ''; definition = ''; pronunciation = ''; example = ''; emoji = '';
-      image = null; audio = null; allowMissing = false; schedule();
+      image = null; sharedImagePath = null; audio = null; allowMissing = false; schedule();
     } catch (e) { error = e.toString(); validated = false; rethrow; }
     finally { publishing = false; _notify(); }
   }

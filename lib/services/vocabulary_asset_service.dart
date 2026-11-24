@@ -64,6 +64,13 @@ class VocabularyAssetService {
     return _remoteFolders[folder] = names;
   }
 
+  Future<List<String>> listSharedImages() async {
+    _remoteFolders.remove('images');
+    final names = await _folder('images');
+    return names.map((name) => 'images/$name')
+        .where((path) => validPath(path, audio: false)).toList()..sort();
+  }
+
   Future<VocabularyAssetMatch> match(String reference, {required bool audio}) async {
     final path = pathFromReference(reference, audio: audio);
     final slash = path.lastIndexOf('/');
