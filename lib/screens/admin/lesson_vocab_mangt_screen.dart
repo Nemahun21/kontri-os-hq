@@ -34,7 +34,8 @@ class _LessonVocabularyManagementScreenState
   List<LessonVocabulary> _items = [];
   bool _isLoading = true;
 
-  String _selectedDifficulty = 'easy';
+  String _selectedDifficulty = 'easy'; // Existing Adventure filter
+  String _languageDifficultyFilter = 'all'; // Never hide words by default
 
   bool get _isAdventure => widget.contentType == 'adventure';
   bool get _isLanguage => widget.contentType == 'language';
@@ -64,7 +65,13 @@ class _LessonVocabularyManagementScreenState
   }
 
   List<LessonVocabulary> get _filteredItems {
-    if (_isLanguage) return _items;
+    if (_isLanguage) {
+      if (_languageDifficultyFilter == 'all') return _items;
+      if (_languageDifficultyFilter == 'unassigned') {
+        return _items.where((i) => i.difficulty == null).toList();
+      }
+      return _items.where((i) => i.difficulty == _languageDifficultyFilter).toList();
+    }
     return _items.where((i) => i.difficulty == _selectedDifficulty).toList();
   }
 
@@ -106,14 +113,14 @@ class _LessonVocabularyManagementScreenState
     );
     final exampleController = TextEditingController(text: item?.example ?? '');
     final emojiController = TextEditingController(text: item?.emoji ?? '');
-    // final positionController =
-    //     TextEditingController(text: (item?.position ?? 1).toString());
+    final positionController = TextEditingController(
+      text: (item?.position ?? 1).toString(),
+    );
     final imageUrlController = TextEditingController(
       text: item?.imageUrl ?? '',
     );
 
-    // Only for Adventure
-    String difficulty = item?.difficulty ?? _selectedDifficulty;
+    String? difficulty = item?.difficulty ?? (_isAdventure ? _selectedDifficulty : null);
 
     final result = await showDialog<bool>(
       context: context,
@@ -126,8 +133,9 @@ class _LessonVocabularyManagementScreenState
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Difficulty dropdown – ADVENTURE ONLY
-                  if (_isAdventure) ...[
+                  // Both content types use the same DB values; language
+                  // UI presents them as Beginner / Intermediate / Advanced.
+                  ...[
                     DropdownButtonFormField<String>(
                       value: difficulty,
                       decoration: const InputDecoration(
@@ -135,12 +143,12 @@ class _LessonVocabularyManagementScreenState
                         border: OutlineInputBorder(),
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'easy', child: Text('💡 Easy')),
+                        DropdownMenuItem(value: 'easy', child: Text('Beginner / Easy')),
                         DropdownMenuItem(
                           value: 'medium',
-                          child: Text('🔥 Medium'),
+                          child: Text('Intermediate / Medium'),
                         ),
-                        DropdownMenuItem(value: 'hard', child: Text('🌊 Hard')),
+                        DropdownMenuItem(value: 'hard', child: Text('Advanced / Hard')),
                       ],
                       onChanged: (val) {
                         if (val != null) {
@@ -203,15 +211,15 @@ class _LessonVocabularyManagementScreenState
                       border: OutlineInputBorder(),
                     ),
                   ),
-                  // const SizedBox(height: 12),
-                  // TextField(
-                  //   controller: positionController,
-                  //   keyboardType: TextInputType.number,
-                  //   decoration: const InputDecoration(
-                  //     labelText: 'Position',
-                  //     border: OutlineInputBorder(),
-                  //   ),
-                  // ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: positionController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Position within theme',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -234,9 +242,22 @@ class _LessonVocabularyManagementScreenState
                   return;
                 }
 
+                if (difficulty == null) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Choose a difficulty before saving.')),
+                  );
+                  return;
+                }
+                final requestedPosition = int.tryParse(positionController.text.trim());
+                if (requestedPosition == null || requestedPosition < 1) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Position must be a positive number.')),
+                  );
+                  return;
+                }
                 int position;
                 if (isEdit && item != null) {
-                  position = item.position;
+                  position = requestedPosition;
                 } else {
                   // Find the highest position in the current filtered list, add 1
                   final siblings = _items
@@ -255,15 +276,16 @@ class _LessonVocabularyManagementScreenState
                         .reduce((a, b) => a > b ? a : b);
                     position = maxPos + 1;
                   }
+                  // New entries default to the next safe sequential position.
                 }
 
                 final vocab = LessonVocabulary(
                   id: item?.id ?? '',
                   contentType: widget.contentType,
-                  // Adventure: category + difficulty, Language: themeId only
+                  // Difficulty is valid for Adventure and Language.
                   category: _isAdventure ? widget.category : null,
                   themeId: _isLanguage ? widget.themeId : null,
-                  difficulty: _isAdventure ? difficulty : null,
+                  difficulty: difficulty,
                   term: termController.text.trim(),
                   definition: definitionController.text.trim(),
                   pronunciation: pronunciationController.text.trim().isEmpty
@@ -278,6 +300,8 @@ class _LessonVocabularyManagementScreenState
                   imageUrl: imageUrlController.text.trim().isEmpty
                       ? null
                       : imageUrlController.text.trim(),
+                  // Existing sound must survive unrelated text edits.
+                  audioUrl: item?.audioUrl,
                   position: position,
                 );
 
@@ -382,6 +406,7 @@ class _LessonVocabularyManagementScreenState
       content: Text(
         '${rows.length} rows ready.\n'
         '${_isAdventure ? 'Difficulty: $_selectedDifficulty\n' : ''}'
+        'Language rows must include easy/medium/hard difficulty.\n'
         'Empty word/translation rows will be skipped.',
       ),
       actions: [
@@ -421,12 +446,15 @@ class _LessonVocabularyManagementScreenState
 
       final difficultyFromFile = _cell(row, const ['difficulty']).toLowerCase();
       final difficulty = _isAdventure
-          ? (difficultyFromFile == 'easy' ||
-                  difficultyFromFile == 'medium' ||
-                  difficultyFromFile == 'hard'
+          ? (['easy', 'medium', 'hard'].contains(difficultyFromFile)
               ? difficultyFromFile
               : _selectedDifficulty)
-          : null;
+          : ({'beginner': 'easy', 'intermediate': 'medium', 'advanced': 'hard'}[
+                  difficultyFromFile] ?? difficultyFromFile);
+      if (!['easy', 'medium', 'hard'].contains(difficulty)) {
+        skipped++;
+        continue; // Never silently import unclassified language vocabulary.
+      }
 
       final posRaw = int.tryParse(_cell(row, const ['position']));
       final position = posRaw ?? nextPos;
@@ -444,6 +472,7 @@ class _LessonVocabularyManagementScreenState
         example: _emptyToNull(_cell(row, const ['example'])),
         emoji: _emptyToNull(_cell(row, const ['emoji'])),
         imageUrl: _emptyToNull(_cell(row, const ['image', 'image_url'])),
+        audioUrl: _emptyToNull(_cell(row, const ['audio_url'])),
         position: position,
       );
 
@@ -570,8 +599,8 @@ List<String> _splitCsvLine(String line) {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Difficulty tabs – ADVENTURE ONLY
                 if (_isAdventure) _buildDifficultyTabs(),
+                if (_isLanguage) _buildLanguageDifficultyFilters(),
                 // Table
                 Expanded(
                   child: _filteredItems.isEmpty
@@ -580,6 +609,33 @@ List<String> _splitCsvLine(String line) {
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _buildLanguageDifficultyFilters() {
+    const values = ['all', 'easy', 'medium', 'hard', 'unassigned'];
+    const labels = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Unassigned'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: List.generate(values.length, (i) {
+          final value = values[i];
+          final count = value == 'all'
+              ? _items.length
+              : value == 'unassigned'
+                  ? _items.where((v) => v.difficulty == null).length
+                  : _items.where((v) => v.difficulty == value).length;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text('${labels[i]} ($count)'),
+              selected: _languageDifficultyFilter == value,
+              onSelected: (_) => setState(() => _languageDifficultyFilter = value),
+            ),
+          );
+        }),
+      ),
     );
   }
 
@@ -695,10 +751,11 @@ List<String> _splitCsvLine(String line) {
         'Translation',
         'Pronunciation',
         'Example',
+        'Difficulty',
         'Pos',
         'Actions',
       ];
-      flexValues = [3, 3, 2, 4, 1, 3];
+      flexValues = [3, 3, 2, 4, 2, 1, 3];
     } else {
       headers = ['Term', 'Definition', 'Example', 'Pos', 'Actions'];
       flexValues = [3, 4, 4, 1, 3];
@@ -791,8 +848,6 @@ List<String> _splitCsvLine(String line) {
   }) {
     final List<Widget> cells = [];
 
-    cells.add(Text('${index + 1}', style: const TextStyle(fontSize: 12)));
-
     cells.add(
       Row(
         children: [
@@ -847,6 +902,11 @@ List<String> _splitCsvLine(String line) {
       ),
     );
 
+    if (_isLanguage) {
+      const names = {'easy': 'Beginner', 'medium': 'Intermediate', 'hard': 'Advanced'};
+      cells.add(Text(names[item.difficulty] ?? 'Unassigned',
+          style: const TextStyle(fontSize: 12)));
+    }
     cells.add(Text('${item.position}', style: const TextStyle(fontSize: 12)));
 
     cells.add(
