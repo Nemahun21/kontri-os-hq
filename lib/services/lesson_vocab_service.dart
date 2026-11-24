@@ -58,6 +58,17 @@ class LessonVocabularyService {
     await supabase.rpc('commit_vocabulary_import', params: {'p_rows': rows});
   }
 
+  Future<Map<String, dynamic>> checkFastDraft({
+    required String themeId, required String term, required String definition,
+    required String? slug, required List<String> paths,
+  }) async {
+    final response = await supabase.rpc('check_vocabulary_draft', params: {
+      'p_theme': themeId, 'p_term': term, 'p_definition': definition,
+      'p_slug': slug, 'p_paths': paths,
+    });
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<void> add(LessonVocabulary vocab) async {
     // toSupabase() does not emit 'id', so insert lets Postgres generate it.
     await supabase.from('lesson_vocabulary').insert(vocab.toSupabase());

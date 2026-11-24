@@ -9,6 +9,7 @@ import '../../services/vocabulary_asset_service.dart';
 import '../../services/vocabulary_import_service.dart';
 import '../../services/lesson_vocab_service.dart';
 import '../../services/xlsx_reader.dart';
+import 'vocabulary_fast_upload_view.dart';
 
 class VocabularyBulkImportScreen extends StatefulWidget {
   final String contentType;
@@ -281,7 +282,14 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
     final batch = _batch;
     final rows = batch?.rows.where((r) => _filter == null || r.state == _filter).toList() ?? [];
     return PopScope(canPop: !_busy, child: Scaffold(
-      appBar: AppBar(title: const Text('Bulk Asset Import Studio')),
+      appBar: AppBar(title: const Text('Bulk Asset Import Studio'), actions: [
+        if (widget.contentType == 'language')
+          TextButton.icon(
+            onPressed: _busy ? null : () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => VocabularyFastUploadView(
+                initialThemeId: widget.initialThemeId))),
+            icon: const Icon(Icons.bolt), label: const Text('Fast Upload')),
+      ]),
       body: Column(children: [
         Padding(padding: const EdgeInsets.all(12), child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -144,6 +144,9 @@ BEGIN
     IF coalesce(cardinality(v_ids),0)>1 THEN
       RAISE EXCEPTION 'Ambiguous existing record: %', v_term;
     ELSIF coalesce(cardinality(v_ids),0)=1 THEN
+      IF coalesce((r->>'create_only')::boolean,false) THEN
+        RAISE EXCEPTION 'Fast Upload record already exists; use explicit edit: %', v_term;
+      END IF;
       SELECT * INTO STRICT v_existing FROM public.lesson_vocabulary WHERE id=v_ids[1] FOR UPDATE;
       IF lower(normalize(btrim(v_existing.term), NFC)) <> v_term_key
          OR lower(normalize(btrim(v_existing.definition), NFC)) <> v_definition_key
