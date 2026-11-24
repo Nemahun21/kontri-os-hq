@@ -14,7 +14,7 @@ BEGIN
   SELECT l.code INTO v_language FROM public.language_themes t
     JOIN public.language_type l ON l.id=t.language_type_id WHERE t.id=p_theme;
   IF v_language IS NULL OR length(v_term)>500 OR length(v_definition)>2000
-     OR coalesce(cardinality(p_paths),0)>4 THEN
+     OR coalesce(cardinality(p_paths),0)>8 THEN
     RAISE EXCEPTION 'Invalid draft scope or input';
   END IF;
   IF p_slug IS NOT NULL AND (length(p_slug)>180 OR p_slug !~ '^[a-z0-9]+(_[a-z0-9]+)*$'
@@ -34,6 +34,14 @@ BEGIN
       WHERE v.content_type='language' AND v.file_slug=p_slug
       AND (lower(normalize(btrim(v.term), NFC))<>v_term
         OR lower(normalize(btrim(v.definition), NFC))<>v_definition)),
+    'reference_counts', coalesce((SELECT jsonb_object_agg(o.name,
+      (SELECT count(*) FROM public.lesson_vocabulary v
+       WHERE v.image_url = 'https://ibofeppwhmyxaychgcjq.supabase.co/storage/v1/object/public/vocabulary_assets/'||o.name
+          OR v.audio_url = 'https://ibofeppwhmyxaychgcjq.supabase.co/storage/v1/object/public/vocabulary_assets/'||o.name))
+      FROM storage.objects o WHERE o.bucket_id='vocabulary_assets' AND o.name=ANY(p_paths)
+        AND (o.name ~ '^images/[^/]+$' OR
+          left(o.name,length('audio/'||v_language||'/'))='audio/'||v_language||'/'
+          AND substring(o.name from length('audio/'||v_language||'/')+1) !~ '/')), '{}'::jsonb),
     'existing_paths', coalesce((SELECT jsonb_agg(o.name) FROM storage.objects o
       WHERE o.bucket_id='vocabulary_assets' AND o.name=ANY(p_paths)
         AND (o.name ~ '^images/[^/]+$' OR

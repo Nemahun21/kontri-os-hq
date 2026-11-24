@@ -27,6 +27,13 @@ class VocabularyImportService {
     if (t.isEmpty || m.isEmpty) throw const FormatException('Supply a valid explicit file_slug.');
     return '${language}_${t}_${m}';
   }
+  // Explicit immutable audio revisions preserve the vocabulary identity.
+  static bool validLanguageAudioPath(String path, String language, String slug) {
+    final prefix = 'audio/$language/$slug';
+    if (path == '$prefix.mp3') return true;
+    if (!path.startsWith('${prefix}_v')) return false;
+    return RegExp(r'^_v[0-9a-f]{16}\.mp3$').hasMatch(path.substring(prefix.length));
+  }
   static String? optional(String? value) =>
       value == null || value.trim().isEmpty ? null : value.trim();
 
@@ -231,8 +238,19 @@ class VocabularyImportService {
               ? 'audio/${data['language_code']}/${data['file_slug']}.mp3'
               : null;
           final reference = audioRef ?? expected!;
-          row.audio = await assets.match(reference, audio: true);
-          if (expected != null && row.audio!.path != expected) {
+          // Existing revision is authoritative for implicit audio lookup, when in this bucket.
+          var resolved = reference;
+          if (audioRef == null && row.existingAudio != null && contentType == 'language') {
+            try {
+              final oldPath = assets.pathFromReference(row.existingAudio!, audio: true);
+              if (validLanguageAudioPath(oldPath, data['language_code'].toString(), data['file_slug'].toString())) {
+                resolved = oldPath;
+              }
+            } on FormatException { /* Preserve legacy external link handling. */ }
+          }
+          row.audio = await assets.match(resolved, audio: true);
+          if (expected != null && !validLanguageAudioPath(row.audio!.path,
+              data['language_code'].toString(), data['file_slug'].toString())) {
             throw const FormatException('Audio must use this vocabulary slug and language.');
           }
         }

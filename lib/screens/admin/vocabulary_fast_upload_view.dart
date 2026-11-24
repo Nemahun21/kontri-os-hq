@@ -151,7 +151,7 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       if (_draft.sharedImagePath != null)
         const Text('Shared image selected — existing file will be linked, not uploaded.'),
       const SizedBox(height: 12),
-      VocabularyAssetDropZone(audio: true, enabled: enabled, selectedName: _draft.audio?.name,
+      VocabularyAssetDropZone(audio: true, enabled: enabled, selectedName: _draft.audio?.name ?? _draft.reusedAudioPath?.split('/').last,
         onFile: (file) => _draft.setMedia(file,isAudio:true), onRemove: () => _draft.removeMedia(true)),
       if (_draft.convertingAudio) const Text('Converting audio to MP3…'),
       if (_draft.audio?.convertedToMp3 == true)
@@ -161,6 +161,22 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
         onChanged: enabled ? (v) { _draft.allowMissing = v == true; _draft.schedule(); } : null),
     ]);
   }
+  Future<void> _resolve(String path, {required bool replace}) async {
+    final approved = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(replace ? 'Use new media version?' : 'Use stored media?'),
+      content: Text(replace
+        ? 'Create a new version of this file for this draft. The old file stays untouched. Verify the new media before publishing.'
+        : 'Discard the newly selected file and link the stored file. Preview it before publishing.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx,false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(ctx,true), child: Text(replace ? 'Use new version' : 'Reuse stored file')),
+      ],
+    ));
+    if (!mounted || approved != true) return;
+    if (replace) { _draft.replaceWithRevision(path); }
+    else { _draft.reuseStored(path); }
+  }
+
   Widget _review(bool enabled) {
     final d = _draft;
     final colors = Theme.of(context).colorScheme;
@@ -178,11 +194,27 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       else if (d.sameTerm) const Text('Existing word in selected theme — verify the different meaning.')
       else if (d.validated && d.term.trim().isNotEmpty) const Text('No matching word in this theme.'),
       if (d.slugConflict) Text('Slug belongs to different vocabulary.', style: TextStyle(color: colors.error)),
-      if (d.fileConflict) Text('Destination exists with different content. Publishing blocked.',
-        style: TextStyle(color: colors.error)),
+      for (final path in d.conflictPaths)
+        Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(path.startsWith('audio/') ? 'Audio conflict' : 'Image conflict',
+              style: TextStyle(color: colors.error, fontWeight: FontWeight.bold)),
+            Text(path),
+            Text('Vocabulary references: ${d.referenceCounts[path] ?? "unknown"}'),
+            Text('Different bytes at destination. Review and resolve before publishing.'),
+            Wrap(spacing: 8, runSpacing: 4, children: [
+              OutlinedButton(onPressed: enabled && !d.checking ? () => _resolve(path,replace:false) : null,
+                child: const Text('Reuse stored file')),
+              if (d.canReplace(path))
+                FilledButton(onPressed: enabled && !d.checking ? () => _resolve(path,replace:true) : null,
+                  child: const Text('Use new version')),
+            ]),
+            if (!d.canReplace(path)) const Text('Existing referenced or unknown asset is protected.'),
+          ],
+        ))),
       for (final path in d.sourceConflicts) Text('Source filename already exists: $path'),
       for (final path in d.existingPaths.where((p) => p == d.imagePath || p == d.audioPath))
-        Text('Existing destination: $path${d.fileConflict ? "" : " — reuse available"}'),
+        Text('Existing destination: $path${d.conflictPaths.contains(path) ? " — conflict" : " — reuse available"}'),
       if (!d.allowMissing && (!d.hasImage || !d.hasAudio))
         const Text('Image and pronunciation are required unless missing media is explicitly allowed.'),
       OutlinedButton(onPressed: enabled && d.themeId != null ? d.schedule : null,

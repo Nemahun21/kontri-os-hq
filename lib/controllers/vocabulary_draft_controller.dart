@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -45,7 +46,11 @@ class VocabularyDraftController extends ChangeNotifier {
   String? themeId, languageCode;
   String term = '', definition = '', pronunciation = '', example = '', emoji = '';
   DraftMedia? image, audio;
-  String? sharedImagePath;
+  String? sharedImagePath, reusedAudioPath;
+  String? _imageRevision, _audioRevision, _resolutionSlug;
+  String? _imageOriginal, _audioOriginal;
+  Set<String> conflictPaths = {};
+  Map<String, int> referenceCounts = {};
   bool checking = false, reading = false, publishing = false, allowMissing = false;
   bool convertingAudio = false;
   bool sameTerm = false, duplicate = false, slugConflict = false, fileConflict = false;
@@ -64,25 +69,43 @@ class VocabularyDraftController extends ChangeNotifier {
     } on FormatException { return null; }
   }
   String? get imagePath => resolveImagePath(sharedPath: sharedImagePath,
-      slug: slug, localExtension: image?.extension);
-  static String? resolveImagePath({String? sharedPath, String? slug, String? localExtension}) {
+      slug: slug, localExtension: image?.extension, revision: _imageRevision);
+  static String revisionPath(String path, String version) {
+    if (!RegExp(r'^[0-9a-f]{16}$').hasMatch(version)) {
+      throw const FormatException('Invalid revision token.');
+    }
+    final dot = path.lastIndexOf('.');
+    return '${path.substring(0,dot)}_v$version${path.substring(dot)}';
+  }
+  static String _newRevision() {
+    final random = Random.secure();
+    return List.generate(16, (_) => random.nextInt(16).toRadixString(16)).join();
+  }
+  static String? resolveImagePath({String? sharedPath, String? slug, String? localExtension, String? revision}) {
     if (sharedPath != null) {
       if (!VocabularyAssetService.validPath(sharedPath, audio: false)) {
         throw const FormatException('Invalid shared image path.');
       }
       return sharedPath;
     }
-    return slug == null || localExtension == null ? null : 'images/$slug.$localExtension';
+    if (slug == null || localExtension == null) return null;
+    final path = 'images/$slug.$localExtension';
+    return revision == null ? path : revisionPath(path, revision);
   }
   bool get hasImage => image != null ||
       (sharedImagePath != null && existingPaths.contains(sharedImagePath));
   String? get sharedImageUrl => sharedImagePath == null ? null :
       client.storage.from(VocabularyAssetService.bucket).getPublicUrl(sharedImagePath!);
-  String? get audioPath => slug == null ? null : 'audio/$languageCode/$slug.mp3';
+  String? get audioPath {
+    if (slug == null) return null;
+    if (reusedAudioPath != null) return reusedAudioPath;
+    final path = 'audio/$languageCode/$slug.mp3';
+    return _audioRevision == null ? path : revisionPath(path, _audioRevision!);
+  }
   bool get hasAudio => audio != null || existingPaths.contains(audioPath);
   bool get canPublish => !publishing && !reading && !checking && validated &&
       !duplicate && !slugConflict && !fileConflict && error == null && slug != null &&
-      (sharedImagePath == null || hasImage) &&
+      (sharedImagePath == null || hasImage) && (reusedAudioPath == null || hasAudio) &&
       (allowMissing || (hasImage && hasAudio));
 
   String? _rawPath(DraftMedia? file, bool isAudio) {
@@ -98,10 +121,14 @@ class VocabularyDraftController extends ChangeNotifier {
     themeId = id; languageCode = code; schedule();
   }
   void schedule() {
+    if (_resolutionSlug != slug) {
+      reusedAudioPath = null; _imageRevision = null; _audioRevision = null;
+      _imageOriginal = null; _audioOriginal = null; _resolutionSlug = null;
+    }
     _timer?.cancel();
     final revision = ++_revision;
     validated = false; sameTerm = false; duplicate = false; slugConflict = false;
-    fileConflict = false; error = null; existingPaths = {};
+    fileConflict = false; error = null; existingPaths = {}; conflictPaths = {}; referenceCounts = {};
     checking = themeId != null && (term.trim().isNotEmpty || image != null || sharedImagePath != null || audio != null);
     _notify();
     if (checking) {
@@ -113,11 +140,38 @@ class VocabularyDraftController extends ChangeNotifier {
     if (!VocabularyAssetService.validPath(path, audio: false)) {
       throw const FormatException('Invalid shared image path.');
     }
-    image = null; sharedImagePath = path; schedule();
+    image = null; sharedImagePath = path; _imageRevision = null; _imageOriginal = null; schedule();
+  }
+
+  bool canReplace(String path) =>
+      conflictPaths.contains(path) && referenceCounts[path] == 0 && slug != null;
+
+  void reuseStored(String path) {
+    if (reading || publishing || checking || !conflictPaths.contains(path)) return;
+    if (path == imagePath) {
+      selectSharedImage(path);
+    } else if (path == audioPath && slug != null &&
+        VocabularyImportService.validLanguageAudioPath(path, languageCode!, slug!)) {
+      audio = null; reusedAudioPath = path; _audioRevision = null; _audioOriginal = null;
+      _resolutionSlug = slug; schedule();
+    }
+  }
+
+  void replaceWithRevision(String path) {
+    if (reading || publishing || checking || !canReplace(path)) return;
+    if (path == imagePath && image != null) {
+      _imageOriginal ??= path; _imageRevision = _newRevision();
+    } else if (path == audioPath && audio != null) {
+      _audioOriginal ??= path; _audioRevision = _newRevision();
+    } else { return; }
+    _resolutionSlug = slug;
+    schedule();
   }
 
   Future<void> setMedia(VocabularyLocalAsset source, {required bool isAudio}) async {
     if (reading || publishing) return;
+    if (isAudio) { reusedAudioPath = null; _audioRevision = null; _audioOriginal = null; }
+    else { _imageRevision = null; _imageOriginal = null; }
     reading = true;
     convertingAudio = isAudio && source.name.split('.').last.toLowerCase() != 'mp3';
     _notify();
@@ -137,14 +191,15 @@ class VocabularyDraftController extends ChangeNotifier {
   }
   void removeMedia(bool isAudio) {
     if (publishing || reading) return;
-    if (isAudio) { audio = null; } else { image = null; sharedImagePath = null; }
+    if (isAudio) { audio = null; reusedAudioPath = null; _audioRevision = null; _audioOriginal = null; }
+    else { image = null; sharedImagePath = null; _imageRevision = null; _imageOriginal = null; }
     schedule();
   }
   Future<bool> _validate(int revision) async {
     if (_disposed || revision != _revision || themeId == null) return false;
     final i = image, a = audio, ip = imagePath, ap = audioPath;
     final paths = <String>{
-      for (final path in [ip, ap, _rawPath(i, false), _rawPath(a, true)])
+      for (final path in [ip, ap, _rawPath(i, false), _rawPath(a, true), _imageOriginal, _audioOriginal])
         if (path != null) path,
     }.toList();
     try {
@@ -152,16 +207,30 @@ class VocabularyDraftController extends ChangeNotifier {
           definition: definition, slug: slug, paths: paths);
       if (_disposed || revision != _revision) return false;
       final found = Set<String>.from(result['existing_paths'] as List);
-      bool conflict = false;
+      final counts = Map<String, int>.from(result['reference_counts'] as Map);
+      final conflicts = <String>{};
       for (final entry in [(ip, i), (ap, a)]) {
         final path = entry.$1, media = entry.$2;
         if (path != null && media != null && found.contains(path)) {
           final remote = await client.storage.from(VocabularyAssetService.bucket).download(path);
           if (_disposed || revision != _revision) return false;
-          if (!listEquals(remote, media.bytes)) conflict = true;
+          if (!listEquals(remote, media.bytes)) conflicts.add(path);
         }
       }
       if (_disposed || revision != _revision) return false;
+      referenceCounts = counts; conflictPaths = conflicts;
+      if (reusedAudioPath != null && !found.contains(reusedAudioPath)) {
+        existingPaths = found; validated = false;
+        error = 'Selected stored audio no longer exists. Choose another recording.';
+        return false;
+      }
+      for (final original in [_imageOriginal, _audioOriginal]) {
+        if (original != null && counts[original] != 0) {
+          existingPaths = found; validated = false;
+          error = 'Original asset changed or now has references. Re-select the media and review.';
+          return false;
+        }
+      }
       if (sharedImagePath != null && !found.contains(sharedImagePath)) {
         existingPaths = found; validated = false;
         error = 'Selected shared image no longer exists. Choose another image.';
@@ -169,7 +238,7 @@ class VocabularyDraftController extends ChangeNotifier {
       }
       existingPaths = found; sameTerm = result['same_term'] == true;
       duplicate = result['duplicate'] == true; slugConflict = result['slug_conflict'] == true;
-      fileConflict = conflict; validated = true; error = null;
+      fileConflict = conflicts.isNotEmpty; validated = true; error = null;
       return !duplicate && !slugConflict && !fileConflict;
     } catch (e) {
       if (!_disposed && revision == _revision) {
@@ -201,6 +270,9 @@ class VocabularyDraftController extends ChangeNotifier {
         if (audio != null || existingPaths.contains(ap)) 'audio_url': ap,
       }], contentType: 'language', initialThemeId: themeId);
       final row = batch.rows.single;
+      if (reusedAudioPath != null && row.audio?.remote != true) {
+        throw StateError('Selected stored audio is no longer available.');
+      }
       if (sharedImagePath != null && row.image?.remote != true) {
         throw StateError('Selected shared image is no longer available.');
       }
@@ -215,7 +287,9 @@ class VocabularyDraftController extends ChangeNotifier {
         throw StateError(row.error ?? 'Not saved. Revalidate before retrying.');
       }
       term = ''; definition = ''; pronunciation = ''; example = ''; emoji = '';
-      image = null; sharedImagePath = null; audio = null; allowMissing = false; schedule();
+      image = null; sharedImagePath = null; audio = null; reusedAudioPath = null;
+      _imageRevision = null; _audioRevision = null; _imageOriginal = null; _audioOriginal = null;
+      _resolutionSlug = null; allowMissing = false; schedule();
     } catch (e) { error = e.toString(); validated = false; rethrow; }
     finally { publishing = false; _notify(); }
   }

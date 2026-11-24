@@ -6,6 +6,15 @@ import 'package:kohntri_os_hq/services/vocabulary_import_service.dart';
 import 'package:kohntri_os_hq/services/audio_import_service.dart';
 
 void main() {
+  test('immutable revision preserves slug and rejects cross-word audio', () {
+    final path = VocabularyDraftController.revisionPath(
+      'audio/krio/krio_tehl_tenki_gratitude.mp3', '0123456789abcdef');
+    expect(path, 'audio/krio/krio_tehl_tenki_gratitude_v0123456789abcdef.mp3');
+    expect(VocabularyImportService.validLanguageAudioPath(path,'krio','krio_tehl_tenki_gratitude'), isTrue);
+    expect(VocabularyImportService.validLanguageAudioPath(path,'mende','mende_tehl_tenki_gratitude'), isFalse);
+    expect(VocabularyImportService.validLanguageAudioPath('audio/krio/krio_tehl_tenki_gratitude_other.mp3',
+      'krio','krio_tehl_tenki_gratitude'), isFalse);
+  });
   test('MP3 bypasses conversion and preserves its bytes', () async {
     final bytes = Uint8List.fromList([73,68,51,0,0,0,0,0,0,0,0,0]);
     final source = VocabularyLocalAsset('voice.MP3', () async => bytes.length, () async => bytes);

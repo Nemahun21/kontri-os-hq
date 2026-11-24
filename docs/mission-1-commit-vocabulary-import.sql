@@ -118,7 +118,11 @@ BEGIN
     v_path := nullif(r->>'audio_path','');
     IF v_path IS NOT NULL THEN
       IF v_path !~ '^audio/[a-z0-9_]+/[a-z0-9]+(_[a-z0-9]+)*[.]mp3$'
-         OR (v_type='language' AND v_path <> 'audio/'||v_language||'/'||v_slug||'.mp3')
+         OR (v_type='language' AND v_path <> 'audio/'||v_language||'/'||v_slug||'.mp3'
+             AND (left(v_path, length('audio/'||v_language||'/'||v_slug)) <>
+                    'audio/'||v_language||'/'||v_slug
+                  OR substring(v_path from length('audio/'||v_language||'/'||v_slug)+1)
+                    !~ '^_v[0-9a-f]{16}[.]mp3$'))
          OR NOT EXISTS (
            SELECT 1 FROM storage.objects o
            WHERE o.bucket_id='vocabulary_assets' AND o.name=v_path
