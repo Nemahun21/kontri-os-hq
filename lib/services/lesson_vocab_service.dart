@@ -23,10 +23,13 @@ class LessonVocabularyService {
       if (themeId != null) query = query.eq('theme_id', themeId);
     }
 
-    final response = await query.order('position');
-    return (response as List)
-        .map((json) => LessonVocabulary.fromSupabase(json))
-        .toList();
+    final items = <LessonVocabulary>[];
+    for (var offset = 0;; offset += 500) {
+      final response = await query.order('position').order('id').range(offset, offset + 499);
+      items.addAll((response as List).map((json) => LessonVocabulary.fromSupabase(json)));
+      if (response.length < 500) break;
+    }
+    return items;
   }
 
   // ─────────────────────────────────────────────

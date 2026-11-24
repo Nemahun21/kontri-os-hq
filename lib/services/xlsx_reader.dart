@@ -147,7 +147,11 @@ class XlsxReader {
           }
           continue;
         }
-        lines.add(row.map(_escape).join(','));
+        if (row.length > header.length && row.skip(header.length).any((v) => v.trim().isNotEmpty)) {
+          throw FormatException('Sheet ${sheet.name} row ${i + 1} has extra fields.');
+        }
+        final aligned = [for (var j = 0; j < header.length; j++) j < row.length ? row[j] : ''];
+        lines.add(aligned.map(_escape).join(','));
       }
     }
     return Uint8List.fromList(utf8.encode(lines.join('\n')));

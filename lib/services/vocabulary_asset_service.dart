@@ -13,11 +13,13 @@ class VocabularyAssetService {
   final Map<String, List<VocabularyLocalAsset>> _locals = {};
   final Map<String, Set<String>> _remoteFolders = {};
   final Set<String> _confirmed = {};
+  final Set<String> _validated = {};
 
   void setFiles(List<VocabularyLocalAsset> files) {
     _locals.clear();
     _remoteFolders.clear();
     _confirmed.clear();
+    _validated.clear();
     for (final file in files) {
       final key = file.name;
       (_locals[key] ??= []).add(file);
@@ -79,6 +81,20 @@ class VocabularyAssetService {
       }
     }
     final remote = (await _folder(folder)).contains(name);
+    if (local != null && !_validated.contains(path)) {
+      final bytes = await local.read();
+      if (bytes.length > (audio ? maxAudioBytes : maxImageBytes) ||
+          !validSignature(path, bytes)) {
+        throw FormatException('Invalid media signature: $name');
+      }
+      if (remote) {
+        final existing = await client.storage.from(bucket).download(path);
+        if (!listEquals(existing, bytes)) {
+          throw StateError('Different asset already exists: $path');
+        }
+      }
+      _validated.add(path);
+    }
     return VocabularyAssetMatch(path, local: local, remote: remote);
   }
 
@@ -141,11 +157,7 @@ class VocabularyAssetService {
       }
     } else {
       // The server-side import function rechecks existence when saving.
-      final slash = path.lastIndexOf('/');
-      _remoteFolders.remove(path.substring(0, slash));
-      if (!(await _folder(path.substring(0, slash))).contains(path.substring(slash + 1))) {
-        throw StateError('Asset disappeared: $path');
-      }
+      // Remote-only assets were indexed during validation.
     }
     _confirmed.add(path);
     return store.getPublicUrl(path);

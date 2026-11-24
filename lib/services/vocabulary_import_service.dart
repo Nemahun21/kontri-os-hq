@@ -103,6 +103,12 @@ class VocabularyImportService {
         if (data['term'] == '' || data['definition'] == '') {
           throw const FormatException('Term and definition are required.');
         }
+        final positionText = optional(val('position'));
+        if (positionText != null) {
+          final position = int.tryParse(positionText);
+          if (position == null || position < 1) throw const FormatException('Position must be a positive integer.');
+          data['position'] = position;
+        }
         if (contentType == 'language') {
           final languageText = key(val('language'));
           final themeText = key(val('theme'));
@@ -174,8 +180,8 @@ class VocabularyImportService {
             throw const FormatException('Existing record conflicts; edit it explicitly.');
           }
           row.existingId = old['id'].toString();
-          row.existingImage = old['image_url'] as String?;
-          row.existingAudio = old['audio_url'] as String?;
+          row.existingImage = optional(old['image_url'] as String?);
+          row.existingAudio = optional(old['audio_url'] as String?);
         }
 
         final batchKey = '${scope(data)}:${identity(data)}';
