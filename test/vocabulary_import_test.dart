@@ -31,6 +31,17 @@ void main() {
     expect(VocabularyAssetService.validPath('images/drum.mp3', audio: false), isFalse);
   });
 
+  test('Legacy suggestion uses the same basic transliteration as the backfill', () {
+    expect(VocabularyImportService.suggestedSlug('mende','Yɛmɔi','Mother in-law'),
+      'mende_yemoi_mother_in_law');
+    expect(VocabularyImportService.suggestedSlug('temne','ŋə','Example'), 'temne_nge_example');
+  });
+
+  test('Workbook pads trailing blank cells', () {
+    final csv = XlsxReader.toCsv([XlsxSheet('A', [['term','definition','example'], ['a','b']])]);
+    expect(VocabularyImportService.parse(csv).single['example'], '');
+  });
+
   test('Workbook refuses incompatible header layouts', () {
     expect(() => XlsxReader.toCsv([
       XlsxSheet('A', [['term','definition'], ['a','b']]),
