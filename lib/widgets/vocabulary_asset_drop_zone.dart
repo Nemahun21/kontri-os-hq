@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/vocabulary_import_batch.dart';
+import '../services/audio_import_service.dart';
 
 class VocabularyAssetDropZone extends StatefulWidget {
   final bool audio, enabled;
@@ -29,7 +30,7 @@ class _VocabularyAssetDropZoneState extends State<VocabularyAssetDropZone> {
     setState(() => _picking = true);
     try {
       final file = await FilePicker.pickFile(type: FileType.custom,
-        allowedExtensions: widget.audio ? const ['mp3'] : const ['png','jpg','jpeg','webp']);
+        allowedExtensions: widget.audio ? AudioImportService.selectableExtensions : const ['png','jpg','jpeg','webp']);
       if (file == null || !mounted || !widget.enabled) return;
       await widget.onFile(VocabularyLocalAsset(file.name, () async {
         final length = await file.length();
@@ -51,11 +52,15 @@ class _VocabularyAssetDropZoneState extends State<VocabularyAssetDropZone> {
         Row(children: [
           Icon(widget.audio ? Icons.audiotrack : Icons.image),
           const SizedBox(width: 8),
-          Expanded(child: Text(widget.selectedName ?? (widget.audio ? 'MP3 audio' : 'Image'))),
+          Expanded(child: Text(widget.selectedName ?? (widget.audio ? 'Pronunciation audio' : 'Image'))),
           if (widget.selectedName != null) IconButton(onPressed: _enabled ? widget.onRemove : null,
             icon: const Icon(Icons.close), tooltip: 'Remove file'),
         ]),
-        Text(widget.audio ? 'MP3 · up to 10 MB' : 'PNG / JPG / JPEG / WebP · up to 5 MB'),
+        Text(widget.audio
+          ? (AudioImportService.canConvert
+              ? 'MP3, WAV, M4A, AAC, OGG, OPUS, FLAC, AMR, 3GP · auto-convert to MP3. Source up to 50 MB; MP3 up to 10 MB.'
+              : 'MP3 only on this platform · up to 10 MB')
+          : 'PNG / JPG / JPEG / WebP · up to 5 MB'),
         OutlinedButton(onPressed: _enabled ? _browse : null,
           child: Text(_canDrop ? 'Drop one file here or browse' : 'Browse files')),
       ]),

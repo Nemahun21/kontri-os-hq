@@ -6,6 +6,7 @@ import '../models/vocabulary_import_batch.dart';
 import '../services/lesson_vocab_service.dart';
 import '../services/vocabulary_asset_service.dart';
 import '../services/vocabulary_import_service.dart';
+import '../services/audio_import_service.dart';
 
 class DraftMedia {
   final String name;
@@ -15,10 +16,15 @@ class DraftMedia {
   VocabularyLocalAsset named(String name) =>
       VocabularyLocalAsset(name, () async => bytes.length, () async => bytes);
 
+  bool get convertedToMp3 => AudioImportService.extensions.contains(extension) && extension != 'mp3';
+
   static Future<DraftMedia> load(VocabularyLocalAsset source, {required bool audio}) async {
+    if (audio) {
+      return DraftMedia(source.name, await AudioImportService.prepare(source));
+    }
     final extension = source.name.split('.').last.toLowerCase();
-    final extensions = audio ? const ['mp3'] : const ['png', 'jpg', 'jpeg', 'webp'];
-    final max = audio ? VocabularyAssetService.maxAudioBytes : VocabularyAssetService.maxImageBytes;
+    const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+    const max = VocabularyAssetService.maxImageBytes;
     if (!source.name.contains('.') || !extensions.contains(extension)) {
       throw const FormatException('Unsupported file format.');
     }
@@ -41,6 +47,7 @@ class VocabularyDraftController extends ChangeNotifier {
   DraftMedia? image, audio;
   String? sharedImagePath;
   bool checking = false, reading = false, publishing = false, allowMissing = false;
+  bool convertingAudio = false;
   bool sameTerm = false, duplicate = false, slugConflict = false, fileConflict = false;
   bool validated = false;
   Set<String> existingPaths = {};
@@ -111,7 +118,9 @@ class VocabularyDraftController extends ChangeNotifier {
 
   Future<void> setMedia(VocabularyLocalAsset source, {required bool isAudio}) async {
     if (reading || publishing) return;
-    reading = true; _notify();
+    reading = true;
+    convertingAudio = isAudio && source.name.split('.').last.toLowerCase() != 'mp3';
+    _notify();
     try {
       final media = await DraftMedia.load(source, audio: isAudio);
       if (_disposed) return;
@@ -124,7 +133,7 @@ class VocabularyDraftController extends ChangeNotifier {
         _timer?.cancel(); ++_revision; checking = false; validated = false;
         error = e.toString();
       }
-    } finally { reading = false; _notify(); }
+    } finally { reading = false; convertingAudio = false; _notify(); }
   }
   void removeMedia(bool isAudio) {
     if (publishing || reading) return;

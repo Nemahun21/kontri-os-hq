@@ -153,6 +153,9 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       const SizedBox(height: 12),
       VocabularyAssetDropZone(audio: true, enabled: enabled, selectedName: _draft.audio?.name,
         onFile: (file) => _draft.setMedia(file,isAudio:true), onRemove: () => _draft.removeMedia(true)),
+      if (_draft.convertingAudio) const Text('Converting audio to MP3…'),
+      if (_draft.audio?.convertedToMp3 == true)
+        const Text('Converted to MP3 — ready for pronunciation preview.'),
       CheckboxListTile(contentPadding: EdgeInsets.zero, value: _draft.allowMissing,
         title: const Text('Explicitly allow missing media'),
         onChanged: enabled ? (v) { _draft.allowMissing = v == true; _draft.schedule(); } : null),
