@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../models/lesson_vocab.dart';
-import '../../services/lesson_vocab_service.dart';
+import 'package:kohntri_os_hq/models/lesson_vocab.dart';
+import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 
 class LessonVocabEditScreen extends StatefulWidget {
   final LessonVocabulary? existing;
@@ -93,6 +93,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
     try {
       final vocab = LessonVocabulary(
         id: widget.existing?.id ?? '',
+        fileSlug: widget.existing?.fileSlug,
         contentType: _contentType,
         category: _contentType == 'adventure' ? _category : null,
         themeId: _contentType == 'language' ? _themeId : null,

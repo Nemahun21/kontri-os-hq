@@ -141,17 +141,25 @@ class XlsxReader {
         final row = sheet.rows[i];
         if (header == null) {
           header = row;
-        } else if (i == 0 && _sameRow(row, header)) {
+        } else if (i == 0) {
+          if (!_sameRow(row, header)) {
+            throw FormatException('Sheet ${sheet.name} has different headers. Import separately.');
+          }
           continue;
         }
-        lines.add(row.map(_escape).join(','));
+        if (row.length > header.length && row.skip(header.length).any((v) => v.trim().isNotEmpty)) {
+          throw FormatException('Sheet ${sheet.name} row ${i + 1} has extra fields.');
+        }
+        final aligned = [for (var j = 0; j < header.length; j++) j < row.length ? row[j] : ''];
+        lines.add(aligned.map(_escape).join(','));
       }
     }
     return Uint8List.fromList(utf8.encode(lines.join('\n')));
   }
 
   static bool _sameRow(List<String> a, List<String> b) {
-    final n = a.length < b.length ? a.length : b.length;
+    if (a.length != b.length) return false;
+    final n = a.length;
     for (var i = 0; i < n; i++) {
       if (a[i].toLowerCase() != b[i].toLowerCase()) return false;
     }

@@ -9,6 +9,7 @@ class LessonVocabulary {
   final String? pronunciation;
   final String? example;
   final String? emoji;
+  final String? fileSlug;
   final String? audioUrl;
   final String? imageUrl;
   final int position;
@@ -24,6 +25,7 @@ class LessonVocabulary {
     this.pronunciation,
     this.example,
     this.emoji,
+    this.fileSlug,
     this.audioUrl,
     this.imageUrl,
     this.position = 1,
@@ -41,6 +43,7 @@ class LessonVocabulary {
       pronunciation: json['pronunciation'],
       example: json['example'],
       emoji: json['emoji'],
+      fileSlug: json['file_slug'],
       audioUrl: json['audio_url'],
       imageUrl: json['image_url'],
       position: json['position'] ?? 1,
@@ -58,6 +61,7 @@ class LessonVocabulary {
       'pronunciation': pronunciation,
       'example': example,
       'emoji': emoji,
+      'file_slug': fileSlug,
       'audio_url': audioUrl,
       'image_url': imageUrl,
       'position': position,

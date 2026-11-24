@@ -23,10 +23,13 @@ class LessonVocabularyService {
       if (themeId != null) query = query.eq('theme_id', themeId);
     }
 
-    final response = await query.order('position');
-    return (response as List)
-        .map((json) => LessonVocabulary.fromSupabase(json))
-        .toList();
+    final items = <LessonVocabulary>[];
+    for (var offset = 0;; offset += 500) {
+      final response = await query.order('position').order('id').range(offset, offset + 499);
+      items.addAll((response as List).map((json) => LessonVocabulary.fromSupabase(json)));
+      if (response.length < 500) break;
+    }
+    return items;
   }
 
   // ─────────────────────────────────────────────
@@ -49,6 +52,23 @@ class LessonVocabularyService {
   // ─────────────────────────────────────────────
   // Write — admin CRUD
   // ─────────────────────────────────────────────
+  /// Server validates every row and resolves existing Storage paths atomically.
+  Future<void> commitImportRows(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty || rows.length > 25) throw ArgumentError('Batch must contain 1–25 records.');
+    await supabase.rpc('commit_vocabulary_import', params: {'p_rows': rows});
+  }
+
+  Future<Map<String, dynamic>> checkFastDraft({
+    required String themeId, required String term, required String definition,
+    required String? slug, required List<String> paths,
+  }) async {
+    final response = await supabase.rpc('check_vocabulary_draft', params: {
+      'p_theme': themeId, 'p_term': term, 'p_definition': definition,
+      'p_slug': slug, 'p_paths': paths,
+    });
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<void> add(LessonVocabulary vocab) async {
     // toSupabase() does not emit 'id', so insert lets Postgres generate it.
     await supabase.from('lesson_vocabulary').insert(vocab.toSupabase());
