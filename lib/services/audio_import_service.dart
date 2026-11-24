@@ -2,7 +2,8 @@ import 'dart:typed_data';
 import '../models/vocabulary_import_batch.dart';
 import 'vocabulary_asset_service.dart';
 import 'audio_import_engine_stub.dart'
-    if (dart.library.io) 'audio_import_engine_io.dart' as engine;
+    if (dart.library.io) 'audio_import_engine_io.dart'
+    if (dart.library.js_interop) 'audio_import_engine_web.dart' as engine;
 
 typedef AudioConverter = Future<Uint8List> Function(Uint8List bytes, String extension, int maxOutputBytes);
 

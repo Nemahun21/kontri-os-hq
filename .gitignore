@@ -45,3 +45,6 @@ app.*.map.json
 /android/app/release
 
 .env
+
+# Locally installed pinned FFmpeg WebAssembly assets
+/web/vendor/ffmpeg/
