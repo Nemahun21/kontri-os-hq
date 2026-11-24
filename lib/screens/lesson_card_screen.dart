@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:kohntri_os_hq/models/lesson_vocab.dart';
 import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 
@@ -27,6 +28,22 @@ class _LessonCardScreenState extends State<LessonCardScreen> {
   List<LessonVocabulary> _items = [];
   bool _isLoading = true;
   int _currentIndex = 0;
+  final AudioPlayer _audio = AudioPlayer();
+
+  @override
+  void dispose() {
+    _audio.dispose();
+    super.dispose();
+  }
+
+  Future<void> _play(String url) async {
+    try {
+      await _audio.stop();
+      await _audio.play(UrlSource(url));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Audio could not be played.')));
+    }
+  }
 
   @override
   void initState() {
@@ -53,6 +70,7 @@ class _LessonCardScreenState extends State<LessonCardScreen> {
   }
 
   void _next() {
+    _audio.stop();
     if (_currentIndex < _items.length - 1) {
       setState(() => _currentIndex++);
     } else {
@@ -61,6 +79,7 @@ class _LessonCardScreenState extends State<LessonCardScreen> {
   }
 
   void _previous() {
+    _audio.stop();
     if (_currentIndex > 0) setState(() => _currentIndex--);
   }
 
@@ -272,9 +291,7 @@ class _LessonCardScreenState extends State<LessonCardScreen> {
                             IconButton(
                               icon: const Icon(Icons.volume_up, size: 32),
                               color: Colors.blue[700],
-                              onPressed: () {
-                                // TODO: play audio
-                              },
+                              onPressed: () => _play(item.audioUrl!),
                             ),
                           ],
                         ],

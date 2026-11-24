@@ -93,6 +93,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
     try {
       final vocab = LessonVocabulary(
         id: widget.existing?.id ?? '',
+        fileSlug: widget.existing?.fileSlug,
         contentType: _contentType,
         category: _contentType == 'adventure' ? _category : null,
         themeId: _contentType == 'language' ? _themeId : null,

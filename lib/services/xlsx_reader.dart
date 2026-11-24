@@ -141,7 +141,10 @@ class XlsxReader {
         final row = sheet.rows[i];
         if (header == null) {
           header = row;
-        } else if (i == 0 && _sameRow(row, header)) {
+        } else if (i == 0) {
+          if (!_sameRow(row, header)) {
+            throw FormatException('Sheet ${sheet.name} has different headers. Import separately.');
+          }
           continue;
         }
         lines.add(row.map(_escape).join(','));
@@ -151,7 +154,8 @@ class XlsxReader {
   }
 
   static bool _sameRow(List<String> a, List<String> b) {
-    final n = a.length < b.length ? a.length : b.length;
+    if (a.length != b.length) return false;
+    final n = a.length;
     for (var i = 0; i < n; i++) {
       if (a[i].toLowerCase() != b[i].toLowerCase()) return false;
     }
