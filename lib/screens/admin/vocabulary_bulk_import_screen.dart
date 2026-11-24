@@ -58,14 +58,23 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
   }
 
+  // file_picker v13 returns null when file size cannot be determined.
+  // Fail closed rather than bypassing the manifest and media size limits.
+  Future<int> _requiredFileLength(PlatformFile file) async {
+    final size = await file.length();
+    if (size == null) {
+      throw FormatException('Could not determine file size: ${file.name}. Select the file again.');
+    }
+    return size;
+  }
+
   Future<void> _pickManifest() async {
     setState(() => _busy = true);
     try {
-      final files = await FilePicker.pickFiles(type: FileType.custom,
+      final file = await FilePicker.pickFile(type: FileType.custom,
           allowedExtensions: const ['csv','txt','xlsx']);
-      if (files.isEmpty || !mounted) return;
-      final file = files.first;
-      if (await file.length() > 20 * 1024 * 1024) {
+      if (file == null || !mounted) return;
+      if (await _requiredFileLength(file) > 20 * 1024 * 1024) {
         throw const FormatException('Manifest exceeds 20 MB. Split the batch.');
       }
       var bytes = await file.readAsBytes();
@@ -110,12 +119,11 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
     setState(() => _busy = true);
     try {
       final files = await FilePicker.pickFiles(type: FileType.custom,
-        allowedExtensions: const ['png','jpg','jpeg','webp','mp3'],
-        allowMultiple: true);
+        allowedExtensions: const ['png','jpg','jpeg','webp','mp3']);
       if (files.isEmpty || !mounted) return;
       setState(() {
         _files = [..._files, for (final f in files)
-          VocabularyLocalAsset(f.name, f.length, f.readAsBytes)];
+          VocabularyLocalAsset(f.name, () => _requiredFileLength(f), f.readAsBytes)];
         _batch = null;
         _allowMissing = false;
       });
