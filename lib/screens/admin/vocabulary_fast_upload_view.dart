@@ -22,7 +22,7 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
   final _termFocus = FocusNode();
   List<Map<String, dynamic>> _languages = [], _themes = [];
   String? _languageId;
-  bool _loading = true, _confirming = false;
+  bool _loading = true, _confirming = false, _allowClose = false;
   String? _loadError;
   @override
   void initState() {
@@ -94,7 +94,7 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
       if (approved != true || !mounted || !_draft.canPublish) return;
       await _draft.publish();
       if (!mounted) return;
-      if (_draft.isEdit) { Navigator.pop(context,true); return; }
+      if (_draft.isEdit) { _allowClose=true; Navigator.pop(context,true); return; }
       for (final field in [_term,_definition,_pronunciation,_example,_emoji]) { field.clear(); }
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vocabulary saved. Ready for next entry.')));
     } catch (e) {
@@ -228,13 +228,26 @@ class _VocabularyFastUploadViewState extends State<VocabularyFastUploadView> {
         icon: const Icon(Icons.cloud_upload), label: Text(d.publishing ? 'Saving…' : d.isEdit ? 'Save changes' : 'Publish & Next')),
     ]);
   }
+  Future<void> _close() async {
+    if (_draft.publishing || _draft.reading || _confirming) return;
+    final discard = !_draft.hasUnsavedChanges || await showDialog<bool>(
+      context:context,builder:(ctx)=>AlertDialog(title:const Text('Discard unsaved changes?'),
+        content:const Text('Nothing in this draft will be published. Existing records and media remain unchanged.'),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Keep editing')),
+          FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Discard'))])) == true;
+    if(!mounted || !discard)return;
+    _allowClose=true;
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(animation: _draft, builder: (context, _) {
       final enabled = !_draft.publishing && !_draft.reading && !_confirming;
-      return PopScope(canPop: !_draft.publishing && !_draft.reading && !_confirming, child: Scaffold(
+      return PopScope(canPop: _allowClose || (enabled && !_draft.hasUnsavedChanges),
+        onPopInvokedWithResult: (didPop,_) { if(!didPop && enabled) _close(); }, child: Scaffold(
         appBar: AppBar(title: Text(_draft.isEdit ? 'Edit vocabulary' : 'Vocabulary Studio'), actions: [
-          TextButton(onPressed: enabled ? () => Navigator.pop(context) : null,
+          TextButton(onPressed: enabled ? _close : null,
             child: const Text('Close')),
         ]),
         body: _loading ? const Center(child: CircularProgressIndicator())

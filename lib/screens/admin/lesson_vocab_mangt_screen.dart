@@ -111,7 +111,7 @@ class _LessonVocabularyManagementScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete'),
-        content: Text('Delete "${item.term}"?'),
+        content: Text('Delete "${item.term}"? The vocabulary record will be removed; its media files remain available for reuse.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -385,7 +385,7 @@ class _LessonVocabularyManagementScreenState
             for(final d in ['easy','medium','hard']) ChoiceChip(label:Text(d),selected:_selectedDifficulty==d,
               onSelected:(_)=>setState(()=>_selectedDifficulty=d)),
           ]),
-          WorkspaceMetrics(values:{'Vocabulary':'${scoped.length}','Images':'$images','Recordings':'$audio','Missing media':'${scoped.length-complete}'}),
+          WorkspaceMetrics(values:{'Vocabulary':_loadError==null?'${scoped.length}':'—','Images':_loadError==null?'$images':'—','Recordings':_loadError==null?'$audio':'—','Missing media':_loadError==null?'${scoped.length-complete}':'—'}),
           const SizedBox(height:14),
           Wrap(spacing:8,runSpacing:8,crossAxisAlignment:WrapCrossAlignment.center,children:[
             FilledButton.icon(onPressed:_loadError==null?_addItem:null,icon:const Icon(Icons.add),label:const Text('Add vocabulary')),
@@ -402,7 +402,7 @@ class _LessonVocabularyManagementScreenState
           if(items.isEmpty) const Padding(padding:EdgeInsets.all(24),child:Center(child:Text('No matching vocabulary.')))
           else LayoutBuilder(builder:(context,constraints){
             if(constraints.maxWidth<800) return Column(children:[for(final item in items) _compact(item)]);
-            return _table(items,constraints.maxWidth);
+            return _table(items);
           }),
         ])),
       ]),
@@ -424,16 +424,21 @@ class _LessonVocabularyManagementScreenState
     onPressed:_linked(item.audioUrl)?()=>_play(item):null,
     icon:Icon(!_linked(item.audioUrl)?Icons.volume_off_outlined:_playingId==item.id?Icons.stop_circle_outlined:Icons.volume_up_outlined));
   Widget _actions(LessonVocabulary item)=>Row(mainAxisSize:MainAxisSize.min,children:[
-    IconButton(onPressed:()=>_editItem(item),tooltip:'Edit vocabulary',icon:const Icon(Icons.edit_outlined)),
-    PopupMenuButton<String>(tooltip:'More actions',onSelected:(v){if(v=='delete')_deleteItem(item);},
+    IconButton(onPressed:_loadError==null?()=>_editItem(item):null,tooltip:'Edit vocabulary',icon:const Icon(Icons.edit_outlined)),
+    PopupMenuButton<String>(enabled:_loadError==null,tooltip:'More actions',onSelected:(v){if(v=='delete')_deleteItem(item);},
       itemBuilder:(_)=>const [PopupMenuItem(value:'delete',child:Text('Delete vocabulary…'))]),
   ]);
-  Widget _compact(LessonVocabulary item)=>Card(child:ListTile(
-    leading:_thumbnail(item),title:Text(item.term),subtitle:Text('${item.definition} · Pos ${item.position}'),
-    trailing:Row(mainAxisSize:MainAxisSize.min,children:[_audio(item),_actions(item)]),
-  ));
+  Widget _compact(LessonVocabulary item)=>Card(child:Padding(padding:const EdgeInsets.all(10),child:Column(
+    children:[
+      Row(children:[_thumbnail(item),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text(item.term,style:const TextStyle(fontWeight:FontWeight.w600)),Text(item.definition),
+        if(item.pronunciation?.isNotEmpty==true)Text(item.pronunciation!),
+        if(item.example?.isNotEmpty==true)Text(item.example!,maxLines:2,overflow:TextOverflow.ellipsis),
+      ]))]),
+      Row(children:[Text('Pos ${item.position}'),const Spacer(),_audio(item),_actions(item)]),
+    ])));
 
-  Widget _table(List<LessonVocabulary> items,double width) {
+  Widget _table(List<LessonVocabulary> items) {
     const headers=['Image','Word','Translation','Pronunciation','Example','Audio','Pos','Actions'];
     const flex=[1,3,3,2,4,1,1,2];
     Widget line(List<Widget> cells,{bool header=false})=>Container(

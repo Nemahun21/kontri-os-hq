@@ -53,6 +53,11 @@ class VocabularyDraftController extends ChangeNotifier {
   }
   final LessonVocabulary? original;
   bool get isEdit => original != null;
+  bool get hasUnsavedChanges => isEdit ? (term != original!.term || definition != original!.definition ||
+      pronunciation != (original!.pronunciation ?? '') || example != (original!.example ?? '') ||
+      emoji != (original!.emoji ?? '') || imageChanged || audioChanged) :
+      (term.isNotEmpty || definition.isNotEmpty || pronunciation.isNotEmpty || example.isNotEmpty ||
+        emoji.isNotEmpty || image != null || audio != null || sharedImagePath != null || reusedAudioPath != null);
   bool imageChanged = false, audioChanged = false;
   String? get preservedImage => isEdit && !imageChanged ? original!.imageUrl : null;
   String? get preservedAudio => isEdit && !audioChanged ? original!.audioUrl : null;
@@ -150,7 +155,12 @@ class VocabularyDraftController extends ChangeNotifier {
   void schedule() {
     if (_resolutionSlug != slug) {
       reusedAudioPath = null; _imageRevision = null; _audioRevision = null;
-      _imageOriginal = null; _audioOriginal = null; _resolutionSlug = null;
+      _imageOriginal = null; _audioOriginal = null;
+      if (isEdit) {
+        if (image != null) _imageRevision = _newRevision();
+        if (audio != null) _audioRevision = _newRevision();
+      }
+      _resolutionSlug = slug;
     }
     _timer?.cancel();
     final revision = ++_revision;
@@ -326,7 +336,7 @@ class VocabularyDraftController extends ChangeNotifier {
       term = ''; definition = ''; pronunciation = ''; example = ''; emoji = '';
       image = null; sharedImagePath = null; audio = null; reusedAudioPath = null;
       _imageRevision = null; _audioRevision = null; _imageOriginal = null; _audioOriginal = null;
-      _resolutionSlug = null; allowMissing = false; schedule();
+      _resolutionSlug = null; imageChanged = false; audioChanged = false; allowMissing = false; schedule();
     } catch (e) { error = e.toString(); validated = false; rethrow; }
     finally { publishing = false; _notify(); }
   }

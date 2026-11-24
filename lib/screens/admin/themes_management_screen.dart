@@ -100,7 +100,7 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Theme'),
         content: Text(
-          'Are you sure you want to delete the theme "${theme.name}"? All questions under this theme will also be deleted.',
+          'Are you sure you want to delete the theme "${theme.name}"? Associated questions and lesson vocabulary may also be deleted. Stored media will not be automatically deleted.',
         ),
         actions: [
           TextButton(
@@ -114,7 +114,7 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
         ],
       ),
     );
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
     setState(() => _isLoading = true);
     final success = await _service.deleteTheme(theme.id);
@@ -148,7 +148,7 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
           languageId: widget.languageId,
         ),
       ),
-    ).then((_) => _loadThemes());
+    ).then((_) { if(mounted) _loadThemes(); });
   }
 
   Future<void> _openVocabulary(LanguageTheme theme) async {

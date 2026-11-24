@@ -173,23 +173,10 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
                 DropdownMenuItem(value: 'adventure', child: Text('Adventure')),
                 DropdownMenuItem(value: 'language', child: Text('Language')),
               ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {
-                  if (v == 'language') {
-                    Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const VocabularyFastUploadView()));
-                    return;
-                  }
-                  _contentType = v;
-                  if (v == 'language') {
-                    _category = null;
-                    _difficulty = null;
-                  } else {
-                    _themeId = null;
-                    _category ??= widget.initialCategory;
-                    _difficulty ??= widget.initialDifficulty ?? 'easy';
-                  }
-                });
+              onChanged: widget.existing != null ? null : (v) {
+                if (v == 'language') {
+                  Navigator.of(context).pushReplacement(MaterialPageRoute(builder:(_)=>const VocabularyFastUploadView()));
+                }
               },
             ),
             const SizedBox(height: 12),

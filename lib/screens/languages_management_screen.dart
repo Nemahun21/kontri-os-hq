@@ -28,7 +28,6 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
 
-  static const _accent = Color(0xFFC0392B);
 
   @override
   void initState() {
@@ -53,6 +52,7 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final languagesFuture = _langService.getLanguages();
@@ -219,8 +219,8 @@ class _LanguagesManagementScreenState extends State<LanguagesManagementScreen> {
         title: const Text('Delete Language'),
         content: Text(
           count > 0
-              ? 'Language "$name" has $count question(s). Deleting it will also delete all associated themes and questions. Are you sure?'
-              : 'Delete language "$name"?',
+              ? 'Language "$name" has $count question(s). Deleting may remove associated themes, questions and lesson vocabulary. Stored media will not be automatically deleted. Continue?'
+              : 'Delete language "$name" and its associated content? Stored media will not be automatically deleted.',
         ),
         actions: [
           TextButton(

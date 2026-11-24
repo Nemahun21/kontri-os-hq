@@ -14,7 +14,7 @@ class LessonVocabularyService {
     String? themeId,
     String? difficulty,
   }) async {
-    var query = supabase.from('lesson_vocabulary').select();
+    var query = supabase.from('lesson_vocabulary').select().eq('content_type',contentType);
 
     if (contentType == 'adventure') {
       if (category != null) query = query.eq('category', category);
