@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../services/lesson_vocab_service.dart';
+import '../../widgets/content_workspace_metrics.dart';
 import 'package:kohntri_os_hq/models/language_theme.dart';
 import 'package:kohntri_os_hq/screens/admin/lesson_vocab_mangt_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/theme_questions_screen.dart';
@@ -22,6 +24,9 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
   final LanguageQuestionService _service = LanguageQuestionService();
   List<LanguageTheme> _themes = [];
   bool _isLoading = true;
+  String _query = '';
+  List<Map<String,dynamic>>? _coverageRows;
+  String? _error;
 
   @override
   void initState() {
@@ -30,16 +35,15 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
   }
 
   Future<void> _loadThemes() async {
-    setState(() => _isLoading = true);
+    if (!mounted) return;
+    setState(() { _isLoading=true; _error=null; });
     try {
-      final themes = await _service.getThemesForLanguage(widget.languageId);
-      setState(() {
-        _themes = themes;
-        _isLoading = false;
-      });
-    } catch (e) {
-      print(e);
-      setState(() => _isLoading = false);
+      final metrics = LessonVocabularyService().contentMetrics().then<List<Map<String,dynamic>>?>((v)=>v,onError:(Object e,StackTrace s)=>null);
+      final themes=await _service.getThemesForLanguage(widget.languageId);
+      final rows=await metrics;
+      if (mounted) setState(() { _themes=themes; _coverageRows=rows; _isLoading=false; });
+    } catch(e) {
+      if(mounted) setState(() { _error=e.toString(); _coverageRows=null; _isLoading=false; });
     }
   }
 
@@ -71,14 +75,13 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
       ),
     );
 
+    controller.dispose();
+    if (!mounted) return;
     if (themeName != null && themeName.isNotEmpty) {
       setState(() => _isLoading = true);
       final newTheme = await _service.createTheme(themeName, widget.languageId);
       if (newTheme != null && mounted) {
-        setState(() {
-          _themes.add(newTheme);
-          _isLoading = false;
-        });
+        await _loadThemes();
       } else {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -148,181 +151,55 @@ class _ThemesManagementScreenState extends State<ThemesManagementScreen> {
     ).then((_) => _loadThemes());
   }
 
+  Future<void> _openVocabulary(LanguageTheme theme) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder:(_)=>LessonVocabularyManagementScreen(
+      contentType:'language',themeId:theme.id,title:'${widget.languageName} • ${theme.name}')));
+    if(mounted) await _loadThemes();
+  }
+
   @override
   Widget build(BuildContext context) {
-    const accentColor = Colors.purple;
-
+    final rows=_coverageRows;
+    final stats=ContentCoverage.fromRows((rows??[]).where((r)=>r['language_id']==widget.languageId));
+    final filtered=_themes.where((t)=>t.name.toLowerCase().contains(_query.toLowerCase())).toList();
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Themes: ${widget.languageName}'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadThemes,
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _addTheme,
-            tooltip: 'Add theme',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _themes.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.folder_open, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  const Text('No themes yet. Add one with the + button.'),
-                ],
-              ),
-            )
-          : SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                children: [
-                  // ---- Header ----
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: accentColor.withOpacity(0.1),
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(8),
-                      ),
-                      border: Border.all(color: Colors.grey.shade400),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              'Theme Name',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Container(width: 1, color: Colors.grey.shade400),
-                        Expanded(
-                          flex: 2,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              'Actions',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // ---- Data rows ----
-                  ..._themes.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final theme = entry.value;
-                    return Container(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          left: BorderSide(color: Colors.grey.shade400),
-                          right: BorderSide(color: Colors.grey.shade400),
-                          bottom: BorderSide(color: Colors.grey.shade400),
-                        ),
-                        color: index.isEven
-                            ? Colors.white
-                            : Colors.grey.shade50,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
-                              ),
-                              child: Text(
-                                theme.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          Container(width: 1, color: Colors.grey.shade400),
-                          Expanded(
-                            flex: 2,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6, 
-                              ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.school,
-                                        color: Colors.purple,
-                                      ),
-                                      tooltip: 'Manage lesson cards',
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                LessonVocabularyManagementScreen(
-                                                  contentType: 'language',
-                                                  themeId: theme.id,
-                                                  title:
-                                                      '${widget.languageName} • ${theme.name}',
-                                                ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.visibility,
-                                        color: Colors.blue,
-                                      ),
-                                      onPressed: () => _onThemeTap(theme),
-                                      tooltip: 'View questions',
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () => _deleteTheme(theme),
-                                      tooltip: 'Delete theme',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
+      appBar:AppBar(title:Text('Themes: ${widget.languageName}'),actions:[
+        IconButton(onPressed:_isLoading?null:_loadThemes,icon:const Icon(Icons.refresh),tooltip:'Refresh'),
+        IconButton(onPressed:_isLoading?null:_addTheme,icon:const Icon(Icons.add),tooltip:'Add theme'),
+      ]),
+      body:_isLoading?const Center(child:CircularProgressIndicator()):RefreshIndicator(
+        onRefresh:_loadThemes,child:ListView(padding:const EdgeInsets.all(16),children:[
+          WorkspaceMetrics(values:{
+            'Themes':'${_themes.length}','Vocabulary':rows==null?'—':'${stats.vocabulary}',
+            'Questions':rows==null?'—':'${stats.questions}','Missing media':rows==null?'—':'${stats.missing}',
+          }),
+          if(_error!=null) Text(_error!,style:TextStyle(color:Theme.of(context).colorScheme.error)),
+          if(rows==null) const Text('Live content metrics unavailable. Refresh to retry.'),
+          const SizedBox(height:16),
+          TextField(onChanged:(v)=>setState(()=>_query=v.trim()),decoration:const InputDecoration(
+            prefixIcon:Icon(Icons.search),hintText:'Search themes…',border:OutlineInputBorder())),
+          const SizedBox(height:12),
+          if(filtered.isEmpty) const Padding(padding:EdgeInsets.all(24),child:Center(child:Text('No matching themes.'))),
+          for(final theme in filtered) _themeCard(context,theme,rows),
+        ])),
     );
+  }
+
+  Widget _themeCard(BuildContext context,LanguageTheme theme,List<Map<String,dynamic>>? rows) {
+    final s=ContentCoverage.fromRows((rows??[]).where((r)=>r['theme_id']==theme.id));
+    return Card(margin:const EdgeInsets.only(bottom:10),child:Padding(padding:const EdgeInsets.all(12),child:Column(
+      crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        ListTile(contentPadding:EdgeInsets.zero,leading:const CircleAvatar(child:Icon(Icons.folder_outlined)),
+          title:Text(theme.name,style:const TextStyle(fontWeight:FontWeight.w700)),
+          subtitle:Text(rows==null?'Metrics unavailable':'${s.vocabulary} words · ${s.questions} questions · ${s.missing} missing media'),
+          trailing:PopupMenuButton<String>(tooltip:'Theme actions',onSelected:(v){if(v=='delete')_deleteTheme(theme);},
+            itemBuilder:(_)=>const [PopupMenuItem(value:'delete',child:Text('Delete theme…'))])),
+        if(rows!=null) CoverageLines(coverage:s),
+        const SizedBox(height:10),
+        Wrap(spacing:8,runSpacing:8,children:[
+          FilledButton.tonalIcon(onPressed:()=>_openVocabulary(theme),icon:const Icon(Icons.style_outlined),label:const Text('Vocabulary')),
+          OutlinedButton.icon(onPressed:()=>_onThemeTap(theme),icon:const Icon(Icons.quiz_outlined),label:const Text('Questions')),
+        ]),
+      ])));
   }
 }

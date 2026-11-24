@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'admin/vocabulary_fast_upload_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:kohntri_os_hq/models/lesson_vocab.dart';
@@ -134,6 +135,9 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.existing?.contentType == 'language' || (widget.existing == null && widget.initialThemeId != null)) {
+      return VocabularyFastUploadView(initialThemeId: widget.initialThemeId, existing: widget.existing);
+    }
     final isEdit = widget.existing != null;
     final isAdventure = _contentType == 'adventure';
 
@@ -172,6 +176,10 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
               onChanged: (v) {
                 if (v == null) return;
                 setState(() {
+                  if (v == 'language') {
+                    Navigator.of(context).push(MaterialPageRoute(builder:(_)=>const VocabularyFastUploadView()));
+                    return;
+                  }
                   _contentType = v;
                   if (v == 'language') {
                     _category = null;
