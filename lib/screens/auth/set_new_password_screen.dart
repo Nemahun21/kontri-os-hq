@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:web/web.dart' as web;
+import '../../utils/recovery_url_stub.dart'
+    if (dart.library.js_interop) '../../utils/recovery_url_web.dart';
 
 class SetNewPasswordScreen extends StatefulWidget {
   const SetNewPasswordScreen({super.key});
@@ -21,10 +21,8 @@ class _SetNewPasswordScreenState extends State<SetNewPasswordScreen> {
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) {
-      // Clear ?code=... from URL so a refresh doesn't re-trigger this screen.
-      web.window.history.replaceState(null, '', '/');
-    }
+    // On web, remove the consumed recovery code. Native builds do nothing.
+    clearRecoveryUrl();
   }
 
   @override
