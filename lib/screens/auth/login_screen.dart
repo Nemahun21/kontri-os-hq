@@ -42,7 +42,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   @override
   void initState() {
     super.initState();
-    _initGoogle();
+    // Google OAuth is disabled until the .dev app has its own OAuth setup.
     _bootstrapSession();
   }
 

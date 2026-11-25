@@ -1,8 +1,6 @@
 plugins {
     id("com.android.application")
-    // START: FlutterFire Configuration
-    id("com.google.gms.google-services")
-    // END: FlutterFire Configuration
+    // Test1 staging uses Supabase email/password, not production Google Services.
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
