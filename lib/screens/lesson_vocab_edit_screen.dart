@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../models/lesson_vocab.dart';
-import '../../services/lesson_vocab_service.dart';
+import 'package:kohntri_os_hq/models/lesson_vocab.dart';
+import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 
 class LessonVocabEditScreen extends StatefulWidget {
   final LessonVocabulary? existing;
@@ -154,7 +154,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Save'),
+                : const Text('Save draft'),
           ),
         ],
       ),
@@ -363,7 +363,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : Text(isEdit ? 'Update entry' : 'Create entry'),
+                  : Text(isEdit ? 'Update draft' : 'Create draft'),
             ),
             const SizedBox(height: 12),
             Center(

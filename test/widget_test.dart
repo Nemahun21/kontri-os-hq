@@ -1,30 +1,29 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:kohntri_os_hq/main.dart';
+import 'package:kohntri_os_hq/models/lesson_vocab.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('draft vocabulary retains stable slug, difficulty, and media', () {
+    final entry = LessonVocabulary.fromSupabase({
+      'id':'existing-id', 'content_type':'language',
+      'theme_id':'theme-id', 'term':'test', 'definition':'test definition',
+      'difficulty':'medium', 'position':5, 'file_slug':'krio_test_test_definition',
+      'status':'pending_approval', 'audio_url':'https://example.invalid/audio.mp3',
+      'image_url':'https://example.invalid/image.png',
+    });
+    expect(entry.id,'existing-id');
+    expect(entry.status,'pending_approval');
+    final data=entry.toSupabase();
+    expect(data['file_slug'],'krio_test_test_definition');
+    expect(data['difficulty'],'medium');
+    expect(data['position'],5);
+    expect(data['audio_url'],entry.audioUrl);
+    expect(data['image_url'],entry.imageUrl);
+    expect(data.containsKey('status'),isFalse);
+    expect(data.containsKey('id'),isFalse);
+  });
+  test('legacy entries without slug or status still deserialize', () {
+    final entry=LessonVocabulary.fromSupabase({'id':'legacy','term':'old'});
+    expect(entry.status,isNull);
+    expect(entry.toSupabase().containsKey('file_slug'),isFalse);
   });
 }
