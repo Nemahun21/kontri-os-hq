@@ -33,6 +33,7 @@ class _LessonVocabularyManagementScreenState
   final LessonVocabularyService _service = LessonVocabularyService();
   List<LessonVocabulary> _items = [];
   bool _isLoading = true;
+  bool _canPublish = false;
 
   String _selectedDifficulty = 'easy'; // Existing Adventure filter
   String _languageDifficultyFilter = 'all'; // Never hide words by default
@@ -54,13 +55,17 @@ class _LessonVocabularyManagementScreenState
         category: _isAdventure ? widget.category : null,
         themeId: _isLanguage ? widget.themeId : null,
       );
+      final canPublish = _isLanguage && await _service.canPublish();
+      if (!mounted) return;
       setState(() {
+        _canPublish = canPublish;
         _items = items;
         _isLoading = false;
       });
     } catch (e) {
-      print('Error: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Load failed: $e')));
     }
   }
 
@@ -82,8 +87,8 @@ class _LessonVocabularyManagementScreenState
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete'),
-        content: Text('Delete "${item.term}"?'),
+        title: const Text('Discard revision'),
+        content: Text('Discard draft for "${item.term}"? Published content will be kept.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -91,18 +96,19 @@ class _LessonVocabularyManagementScreenState
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: const Text('Discard'),
           ),
         ],
       ),
     );
     if (confirm == true) {
-      await _service.delete(item.id);
-      _load();
+      try { await _service.delete(item.id); await _load(); }
+      catch(e) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e'))); }
     }
   }
 
   Future<void> _showEditor({LessonVocabulary? item}) async {
+    if (!_isLanguage) return;
     final isEdit = item != null;
     final termController = TextEditingController(text: item?.term ?? '');
     final definitionController = TextEditingController(
@@ -120,13 +126,17 @@ class _LessonVocabularyManagementScreenState
       text: item?.imageUrl ?? '',
     );
 
+    final audioUrlController = TextEditingController(text:item?.audioUrl ?? '');
+    bool saving = false;
+    bool uploading = false;
     String? difficulty = item?.difficulty ?? (_isAdventure ? _selectedDifficulty : null);
 
     final result = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(isEdit ? 'Edit Vocabulary' : 'Add Vocabulary'),
+          title: Text(isEdit ? 'Edit vocabulary draft' : 'New vocabulary draft'),
           content: SizedBox(
             width: 400,
             child: SingleChildScrollView(
@@ -211,6 +221,36 @@ class _LessonVocabularyManagementScreenState
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  if (item?.fileSlug != null) ...[
+                    Text('File slug: ${item!.fileSlug}'),
+                    TextButton.icon(onPressed: saving || uploading ? null : () async {
+                      setDialogState(() => uploading=true);
+                      try {
+                        final picked=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['png','jpg','jpeg','webp']);
+                        if(picked.isNotEmpty) {
+                          final file=picked.first;
+                          final url=await _service.uploadAsset(item:item!,filename:file.name,bytes:await file.readAsBytes(),audio:false);
+                          if(ctx.mounted) imageUrlController.text=url;
+                        }
+                      } catch(e) { if(ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('$e'))); }
+                      finally { if(ctx.mounted) setDialogState(()=>uploading=false); }
+                    },icon:const Icon(Icons.image),label:const Text('Upload shared image')),
+                  ],
+                  const SizedBox(height:12),
+                  TextField(controller:audioUrlController,decoration:const InputDecoration(labelText:'Audio URL (MP3)',border:OutlineInputBorder())),
+                  if(item?.fileSlug != null) TextButton.icon(onPressed:saving||uploading?null:() async {
+                    setDialogState(()=>uploading=true);
+                    try {
+                      final picked=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['mp3']);
+                      if(picked.isNotEmpty) {
+                        final file=picked.first;
+                        final url=await _service.uploadAsset(item:item!,filename:file.name,bytes:await file.readAsBytes(),audio:true);
+                        if(ctx.mounted) audioUrlController.text=url;
+                      }
+                    } catch(e) { if(ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('$e'))); }
+                    finally { if(ctx.mounted) setDialogState(()=>uploading=false); }
+                  },icon:const Icon(Icons.audio_file),label:const Text('Upload target-language MP3')),
+                  if(item?.fileSlug == null) const Text('Save first, then reopen to attach named assets.'),
                   const SizedBox(height: 12),
                   TextField(
                     controller: positionController,
@@ -226,11 +266,11 @@ class _LessonVocabularyManagementScreenState
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: saving || uploading ? null : () => Navigator.pop(ctx, false),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: saving || uploading ? null : () async {
                 // Safety: for language, themeId MUST exist
                 if (_isLanguage && widget.themeId == null) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
@@ -301,18 +341,20 @@ class _LessonVocabularyManagementScreenState
                       ? null
                       : imageUrlController.text.trim(),
                   // Existing sound must survive unrelated text edits.
-                  audioUrl: item?.audioUrl,
+                  audioUrl: _emptyToNull(audioUrlController.text.trim()),
+                  fileSlug: item?.fileSlug,
                   position: position,
                 );
 
-                if (isEdit) {
-                  await _service.update(vocab);
-                } else {
-                  await _service.add(vocab);
+                setDialogState(()=>saving=true);
+                try {
+                  if (isEdit) { await _service.update(vocab); } else { await _service.add(vocab); }
+                  if(ctx.mounted) Navigator.pop(ctx,true);
+                } catch(e) {
+                  if(ctx.mounted) {setDialogState(()=>saving=false); ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('Draft save failed: $e')));}
                 }
-                Navigator.pop(ctx, true);
               },
-              child: const Text('Save'),
+              child: const Text('Save draft'),
             ),
             if (isEdit && item != null) ...[
               const SizedBox(height: 12),
@@ -332,13 +374,15 @@ class _LessonVocabularyManagementScreenState
       ),
     );
 
-    if (result == true) _load();
+    for(final controller in [termController,definitionController,pronunciationController,exampleController,emojiController,positionController,imageUrlController,audioUrlController]) {controller.dispose();}
+    if (result == true && mounted) _load();
   }
 
   Future<void> _importFromFile() async {
+  if (!_isLanguage) return;
   final files = await FilePicker.pickFiles(
     type: FileType.custom,
-    allowedExtensions: const ['csv', 'xlsx'],
+    allowedExtensions: const ['csv', 'txt', 'xlsx'],
   );
   if (files.isEmpty) return;
 
@@ -402,7 +446,7 @@ class _LessonVocabularyManagementScreenState
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Import lesson cards'),
+      title: const Text('Import vocabulary drafts'),
       content: Text(
         '${rows.length} rows ready.\n'
         '${_isAdventure ? 'Difficulty: $_selectedDifficulty\n' : ''}'
@@ -473,6 +517,7 @@ class _LessonVocabularyManagementScreenState
         emoji: _emptyToNull(_cell(row, const ['emoji'])),
         imageUrl: _emptyToNull(_cell(row, const ['image', 'image_url'])),
         audioUrl: _emptyToNull(_cell(row, const ['audio_url'])),
+        fileSlug: _emptyToNull(_cell(row, const ['file_slug'])),
         position: position,
       );
 
@@ -567,6 +612,23 @@ List<String> _splitCsvLine(String line) {
   return result;
 }
 
+  Future<void> _reviewTheme(bool publish) async {
+    final theme=widget.themeId;
+    if(theme==null || _isLoading || (publish && !_canPublish)) return;
+    final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text(publish?'Publish approved theme on Test1?':'Submit all theme drafts?'),
+      content:Text(publish?'This updates staging learner vocabulary only. Verify the QA preview first.':'All current drafts in this theme become pending approval.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:Text(publish?'Publish on Test1':'Submit'))],
+    ));
+    if(confirmed!=true || !mounted)return;
+    setState(()=>_isLoading=true);
+    try {
+      final n=publish?await _service.publishTheme(theme):await _service.submitTheme(theme);
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$n ${publish?'published':'submitted'}')));
+    } catch(e) {if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e')));}
+    if(mounted) await _load();
+  }
+
   // ---------------------- BUILD ----------------------
   @override
   Widget build(BuildContext context) {
@@ -574,14 +636,16 @@ List<String> _splitCsvLine(String line) {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Lesson Cards: ${widget.title}'),
+        title: Text('${_isLanguage?'Draft workspace':'Read-only'}: ${widget.title}'),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
         actions: [
-          IconButton(
+          if(_isLanguage) IconButton(tooltip:'Submit theme drafts',icon:const Icon(Icons.fact_check),onPressed:_isLoading?null:()=>_reviewTheme(false)),
+          if(_isLanguage && _canPublish) IconButton(tooltip:'Publish reviewed theme on Test1',icon:const Icon(Icons.publish),onPressed:_isLoading?null:()=>_reviewTheme(true)),
+          if(_isLanguage) IconButton(
   icon: const Icon(Icons.upload_file_rounded),
-  tooltip: 'Import CSV / Excel',
+  tooltip: 'Import CSV / TXT / Excel drafts',
   onPressed: _isLoading ? null : _importFromFile,
 ),
           IconButton(
@@ -591,7 +655,7 @@ List<String> _splitCsvLine(String line) {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_isLanguage ? null : FloatingActionButton(
         onPressed: _addItem,
         child: const Icon(Icons.add),
       ),
@@ -857,7 +921,7 @@ List<String> _splitCsvLine(String line) {
           ],
           Expanded(
             child: Text(
-              item.term,
+              '${item.term}${item.status==null?'':' · ${item.status}'}',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
@@ -915,7 +979,7 @@ List<String> _splitCsvLine(String line) {
         mainAxisSize: MainAxisSize.min,
         children: [
           GestureDetector(
-            onTap: () => _editItem(item),
+            onTap: _isLanguage ? () => _editItem(item) : null,
             child: Container(
               width: 26,
               height: 26,
@@ -925,7 +989,7 @@ List<String> _splitCsvLine(String line) {
           ),
           const SizedBox(width: 4),
           GestureDetector(
-            onTap: () => _deleteItem(item),
+            onTap: _isLanguage && (item.status=='draft'||item.status=='pending_approval') ? () => _deleteItem(item) : null,
             child: Container(
               width: 26,
               height: 26,

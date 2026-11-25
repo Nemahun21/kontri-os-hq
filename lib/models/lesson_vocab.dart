@@ -12,6 +12,8 @@ class LessonVocabulary {
   final String? audioUrl;
   final String? imageUrl;
   final int position;
+  final String? fileSlug;
+  final String? status;
 
   LessonVocabulary({
     required this.id,
@@ -27,6 +29,8 @@ class LessonVocabulary {
     this.audioUrl,
     this.imageUrl,
     this.position = 1,
+    this.fileSlug,
+    this.status,
   });
 
   factory LessonVocabulary.fromSupabase(Map<String, dynamic> json) {
@@ -44,6 +48,8 @@ class LessonVocabulary {
       audioUrl: json['audio_url'],
       imageUrl: json['image_url'],
       position: json['position'] ?? 1,
+      fileSlug: json['file_slug'],
+      status: json['status'],
     );
   }
 
@@ -61,6 +67,7 @@ class LessonVocabulary {
       'audio_url': audioUrl,
       'image_url': imageUrl,
       'position': position,
+      if (fileSlug != null) 'file_slug': fileSlug,
     };
   }
 }

@@ -87,6 +87,10 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
   }
 
   Future<void> _save() async {
+    if (_contentType != 'language') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Adventure is read-only in this preview.')));
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     if (_difficulty == null) return; // Never overwrite a language level with null.
     setState(() => _saving = true);
@@ -114,6 +118,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
             ? null
             : _imageCtrl.text.trim(),
         position: int.tryParse(_posCtrl.text.trim()) ?? 1,
+        fileSlug: widget.existing?.fileSlug,
       );
 
       if (widget.existing == null) {
