@@ -170,9 +170,8 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
     await _run(()async{await _rpc(action,expected:_record?['edit_token'] as int?,revision:_record?['revision'] as int?);if(mounted)await _load();});
   }
   Future<void> _import()=>_run(()async{
-    final files=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['csv','txt','xlsx']);
-    if(files.isEmpty||!mounted)return;
-    final file=files.first;final bytes=await file.readAsBytes();
+    final file=await FilePicker.pickFile(type:FileType.custom,allowedExtensions:const ['csv','txt','xlsx']);
+    if(file==null||!mounted)return;final bytes=await file.readAsBytes();
     if(bytes.length>5*1024*1024)throw const FormatException('Maximum import size 5 MB.');
     List<List<String>> rows;
     if(file.name.toLowerCase().endsWith('.xlsx')){
@@ -247,9 +246,8 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
     finally{for(final c in fields.values){c.dispose();}}
   }
   Future<void> _attach(int i,bool audio)=>_run(()async{
-    final files=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:audio?const ['mp3']:const ['png','jpg','jpeg','webp']);
-    if(files.isEmpty||!mounted)return;
-    final file=files.first;
+    final file=await FilePicker.pickFile(type:FileType.custom,allowedExtensions:audio?const ['mp3']:const ['png','jpg','jpeg','webp']);
+    if(file==null||!mounted)return;
     await _uploadMedia(i,file.name,await file.readAsBytes(),audio);
   });
   Future<void> _uploadMedia(int i,String filename,Uint8List bytes,bool audio)async{
@@ -275,7 +273,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
     });
   }
   Future<void> _bulkMedia()=>_run(()async{
-    final files=await FilePicker.pickFiles(allowMultiple:true,type:FileType.custom,allowedExtensions:const ['png','jpg','jpeg','webp','mp3']);
+    final files=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['png','jpg','jpeg','webp','mp3']);
     if(files.isEmpty||!mounted)return;
     final matches=<int,int>{};
     final destinations=<String,List<int>>{};
