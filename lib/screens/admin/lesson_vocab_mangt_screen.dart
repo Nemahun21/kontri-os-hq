@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/models/lesson_vocab.dart';
 import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
+import 'package:kohntri_os_hq/widgets/vocabulary_workspace.dart';
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -34,6 +35,7 @@ class _LessonVocabularyManagementScreenState
   List<LessonVocabulary> _items = [];
   bool _isLoading = true;
   bool _canPublish = false;
+  bool _loadFailed = false;
 
   String _selectedDifficulty = 'easy'; // Existing Adventure filter
   String _languageDifficultyFilter = 'all'; // Never hide words by default
@@ -48,7 +50,7 @@ class _LessonVocabularyManagementScreenState
   }
 
   Future<void> _load() async {
-    setState(() => _isLoading = true);
+    setState(() { _isLoading = true; _loadFailed = false; });
     try {
       final items = await _service.getVocabulary(
         contentType: widget.contentType,
@@ -64,7 +66,7 @@ class _LessonVocabularyManagementScreenState
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      setState(() { _isLoading = false; _loadFailed = true; });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Load failed: $e')));
     }
   }
@@ -166,6 +168,8 @@ class _LessonVocabularyManagementScreenState
                         }
                       },
                     ),
+                    const SizedBox(height: 8),
+                    Align(alignment: Alignment.centerLeft, child: Text(workspaceObjective(difficulty))),
                     const SizedBox(height: 12),
                   ],
 
@@ -265,6 +269,28 @@ class _LessonVocabularyManagementScreenState
             ),
           ),
           actions: [
+            TextButton.icon(
+              onPressed: saving || uploading ? null : () => showVocabularyPreview(
+                ctx,
+                LessonVocabulary(
+                  id: item?.id ?? '',
+                  contentType: widget.contentType,
+                  themeId: widget.themeId,
+                  term: termController.text.trim(),
+                  definition: definitionController.text.trim(),
+                  difficulty: difficulty,
+                  pronunciation: pronunciationController.text.trim(),
+                  example: exampleController.text.trim(),
+                  imageUrl: imageUrlController.text.trim(),
+                  audioUrl: audioUrlController.text.trim(),
+                  fileSlug: item?.fileSlug,
+                  status: 'draft',
+                ),
+                unsaved: true,
+              ),
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('Preview'),
+            ),
             TextButton(
               onPressed: saving || uploading ? null : () => Navigator.pop(ctx, false),
               child: const Text('Cancel'),
@@ -655,13 +681,26 @@ List<String> _splitCsvLine(String line) {
           ),
         ],
       ),
-      floatingActionButton: !_isLanguage ? null : FloatingActionButton(
-        onPressed: _addItem,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: null,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : _loadFailed
+              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text('Could not load the content workspace.'),
+                  TextButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+                ]))
+              : _isLanguage
+              ? VocabularyWorkspace(
+                  items: _items,
+                  canPublish: _canPublish,
+                  onAdd: _addItem,
+                  onEdit: _editItem,
+                  onDiscard: _deleteItem,
+                  onImport: _importFromFile,
+                  onSubmit: () => _reviewTheme(false),
+                  onPublish: () => _reviewTheme(true),
+                )
+              : Column(
               children: [
                 if (_isAdventure) _buildDifficultyTabs(),
                 if (_isLanguage) _buildLanguageDifficultyFilters(),

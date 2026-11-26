@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/screens/admin/admin_metrics_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/content_hub_screen.dart';
+import 'package:kohntri_os_hq/screens/admin/heritage_pilot_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/content_lookup_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/user_lookup_screen.dart';
 import 'package:kohntri_os_hq/screens/admin/widgets/live_feed.dart';
@@ -341,6 +342,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onTap: () => _push(const ContentLookupScreen()),
         ),
       ], cols4),
+      sectionGap,
+
+      AdminSectionTitle('Heritage mission'),
+      gap,
+      _DashTile(
+        icon: Icons.museum_outlined,
+        color: AdminColors.green,
+        title: 'Monuments & Relics',
+        subtitle: 'Review pilot sources and missing content • read-only',
+        value: '4',
+        valueLabel: 'candidate stops',
+        onTap: () => _push(const HeritagePilotScreen()),
+      ),
       sectionGap,
 
       // 4. Analytics
