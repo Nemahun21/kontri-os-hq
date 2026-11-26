@@ -177,17 +177,59 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
     if(!await _confirm('Review import','${rows.length-1} input rows; ${next.length} total stops. Changed rows require review. Nothing is written until Save draft.'))return;
     if(mounted)setState((){_stops=next;_dirty=true;});
   });
+  Future<void> _pickReferences(BuildContext editor,TextEditingController field,bool lessons)async{
+    var term='';
+    final search=await showDialog<String>(context:editor,builder:(c)=>AlertDialog(
+      title:Text(lessons?'Find a heritage lesson':'Find a knowledge check'),
+      content:TextField(autofocus:true,onChanged:(v)=>term=v,onSubmitted:(v)=>Navigator.pop(c,v.trim()),decoration:const InputDecoration(hintText:'Enter a keyword')),
+      actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,term.trim()),child:const Text('Search'))],
+    ));
+    if(search==null||search.isEmpty||!editor.mounted)return;
+    try{
+      final pattern='%${search.replaceAll(RegExp(r'[%_]'),' ')}%';
+      final List<Map<String,dynamic>> rows;
+      if(lessons){
+        rows=await _db.from('lesson_vocabulary').select('id,term,category').eq('content_type','adventure').inFilter('category',['History','Places']).ilike('term',pattern).limit(40);
+      }else{
+        final result=await _db.from('questions').select('id,question,category,type,options,correct_answer_index').inFilter('category',['History','Places']).ilike('question',pattern).limit(40);
+        rows=result.where(supportedHeritageQuestion).toList();
+      }
+      if(!editor.mounted)return;
+      final selected=_values(field.text).toSet();
+      final chosen=await showDialog<List<String>>(context:editor,builder:(c)=>StatefulBuilder(builder:(c,refresh)=>AlertDialog(
+        title:Text('${rows.length} matching ${lessons?'lessons':'checks'}'),
+        content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          if(rows.isEmpty)const Text('No supported matching records. Try a different keyword.'),
+          for(final row in rows)CheckboxListTile(
+            value:selected.contains(row['id'].toString()),
+            title:Text((row[lessons?'term':'question']??'').toString()),
+            subtitle:Text(row['category'].toString()),
+            onChanged:(v)=>refresh((){if(v==true){selected.add(row['id'].toString());}else{selected.remove(row['id'].toString());}}),
+          ),
+        ]))),
+        actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,selected.toList()),child:const Text('Use selected references'))],
+      )));
+      if(chosen!=null&&editor.mounted)field.text=chosen.join('|');
+    }catch(_){
+      if(editor.mounted)ScaffoldMessenger.of(editor).showSnackBar(const SnackBar(content:Text('Could not search Test1 references. Try again.')));
+    }
+  }
   Future<void> _edit(int i)async{
     final s=Map<String,dynamic>.of(_stops[i]);
     final keys=['title','objective','hook','story',..._lists,..._credits];
     final fields={for(final k in keys)k:TextEditingController(text:s[k] is List?(s[k] as List).join('|'):(s[k]??'').toString())};
     final result=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:Text(s['id'].toString()),content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k,helperText:_lists.contains(k)?'Separate values with |':k=='hook'?'A short question or curiosity-led headline':null)))
+      for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k,helperText:_lists.contains(k)?'Separate values with |':k=='hook'?'A short question or curiosity-led headline':null)),
+        if(k=='lesson_ids'||k=='question_ids')TextButton.icon(onPressed:()=>_pickReferences(c,fields[k]!,k=='lesson_ids'),icon:const Icon(Icons.search),label:Text(k=='lesson_ids'?'Find lessons':'Find knowledge checks')),
+      ]))
     ]))),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Apply'))]));
     try{
       if(result!=true||!mounted)return;
       for(final k in keys){s[k]=_lists.contains(k)?_values(fields[k]!.text):fields[k]!.text.trim();}
-      _validateStop(s);for(final k in _reviews){s[k]=false;}
+      _validateStop(s);
+      if(keys.every((k)=>jsonEncode(s[k]??'')==jsonEncode(_stops[i][k]??'')))return;
+      for(final k in _reviews){s[k]=false;}
       setState((){_stops[i]=s;_dirty=true;});
     }catch(e){if(mounted)setState(()=>_error=e.toString());}
     finally{for(final c in fields.values){c.dispose();}}
