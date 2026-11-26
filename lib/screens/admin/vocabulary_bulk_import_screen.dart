@@ -1,4 +1,7 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import '../../services/intake_folder_stub.dart'
+  if (dart.library.io) '../../services/intake_folder_io.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +38,7 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
   bool _busy = false;
   bool _committing = false;
   bool _stop = false;
-  bool _allowMissing = false;
+  bool get _test1 => Uri.parse(Supabase.instance.client.supabaseUrl).host == 'eeeusvsefoxbgshouqjb.supabase.co';
   String _status = '';
   ImportState? _filter;
 
@@ -101,12 +104,12 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
       }
       final rows = VocabularyImportService.parse(bytes, txt: extension == 'txt');
       if (rows.isEmpty) throw const FormatException('No content rows.');
+      if (widget.contentType == 'language' && rows.any((r) => (r['file_slug'] ?? '').trim().isEmpty)) throw const FormatException('Every row needs file_slug.');
       if (!mounted) return;
       setState(() {
         _source = rows;
         _name = file.name;
         _batch = null;
-        _allowMissing = false;
         _status = '${rows.length} rows loaded. Select media, then validate.';
       });
     } catch (e) {
@@ -114,6 +117,24 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  static const _imageExtensions = {'png','jpg','jpeg','webp'};
+  static const _audioExtensions = {'mp3'};
+
+  Future<void> _pickFolder(bool audio) async {
+    setState(() => _busy = true);
+    try {
+      final extensions = audio ? _audioExtensions : _imageExtensions;
+      final files = await pickIntakeFolder(extensions);
+      if (files == null || !mounted) return;
+      setState(() {
+        _files = [..._files.where((f) => !extensions.contains(f.name.split('.').last.toLowerCase())), ...files];
+        _batch = null;
+        _status = '${files.length} media files selected from folder.';
+      });
+    } catch (e) { _error(e); }
+    finally { if (mounted) setState(() => _busy = false); }
   }
 
   Future<void> _pickMedia() async {
@@ -126,7 +147,6 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
         _files = [..._files, for (final f in files)
           VocabularyLocalAsset(f.name, () => _requiredFileLength(f), f.readAsBytes)];
         _batch = null;
-        _allowMissing = false;
       });
     } catch (e) {
       _error(e);
@@ -139,7 +159,7 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
     if (_source == null) return;
     setState(() {
       _busy = true; _batch = null; _status = 'Reading database and Storage…';
-      _allowMissing = false; _filter = null;
+      _filter = null;
     });
     try {
       _assets.setFiles(_files);
@@ -163,17 +183,55 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
     }
   }
 
-  int get _eligible => (_batch?.count(ImportState.ready) ?? 0) +
-      (_allowMissing ? (_batch?.count(ImportState.missing) ?? 0) : 0);
+  bool _hasImage(VocabularyImportRow r) => r.existingImage != null || r.image?.available == true;
+  bool _hasAudio(VocabularyImportRow r) => r.existingAudio != null || r.audio?.available == true;
+  int get _eligible => _batch?.count(ImportState.ready) ?? 0;
+  bool get _canPublish => _test1 && _eligible > 0 &&
+      (_batch?.rows.every((r) => (r.state == ImportState.ready || r.state == ImportState.existing) && _hasImage(r) && _hasAudio(r)) ?? false);
+
+  Future<void> _saveDrafts() async {
+    final batch = _batch;
+    if (!_test1 || batch == null || widget.contentType != 'language' || _busy) return;
+    final selected = batch.rows.where((r) => r.state == ImportState.ready || r.state == ImportState.missing).toList();
+    if (selected.isEmpty || batch.count(ImportState.conflict) > 0) return;
+    setState(() { _busy = true; _committing = true; _stop = false; _status = 'Saving drafts…'; });
+    final client = Supabase.instance.client;
+    try {
+      for (final row in selected) {
+        if (_stop || !mounted) break;
+        try {
+          final data = Map<String,dynamic>.from(row.data);
+          final theme = data['theme_id'] as String;
+          final difficulty = _source![row.line - 2]['difficulty']?.trim().toLowerCase();
+          data['difficulty'] = ['easy','medium','hard'].contains(difficulty) ? difficulty : widget.initialDifficulty;
+          if (data['position'] == null) {
+            final live = await client.from('lesson_vocabulary').select('position').eq('theme_id',theme).order('position',ascending:false).limit(1);
+            final drafts = await client.from('lesson_vocabulary_revisions').select('position').eq('theme_id',theme).order('position',ascending:false).limit(1);
+            var max = 0;
+            for (final entry in [...live,...drafts]) {
+              final p = (entry['position'] as num?)?.toInt() ?? 0;
+              if (p > max) max = p;
+            }
+            data['position'] = max + 1;
+          }
+          if (row.image?.available == true) data['image_url'] = await _assets.ensureUploaded(row.image!);
+          if (row.audio?.available == true) data['audio_url'] = await _assets.ensureUploaded(row.audio!);
+          await client.rpc('v2_save_vocab_draft',params:{'p_row':data});
+          row.state = ImportState.saved;
+        } catch (e) { row.state = ImportState.failed; row.error = e.toString(); }
+        if (mounted) setState(() => _status = 'Drafts saved: ${batch.count(ImportState.saved)} · Failed: ${batch.count(ImportState.failed)}');
+      }
+    } catch (e) { _error(e); }
+    finally { if (mounted) setState(() { _busy = false; _committing = false; }); }
+  }
 
   Future<void> _publish() async {
     final batch = _batch;
-    if (batch == null || _eligible == 0) return;
+    if (batch == null || !_canPublish) return;
     final accepted = await showDialog<bool>(context: context, builder: (context) =>
       AlertDialog(title: const Text('Approve batch'),
         content: Text('Publish $_eligible eligible records? Existing text is not overwritten. '
-          'Missing media will stay unlinked only if you explicitly allowed it. '
-          'Conflicts are excluded.'),
+          'Both image and audio are required. This publishes to the connected Test1 learner database.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Publish')),
@@ -184,7 +242,7 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
       _status = 'Publishing…';
     });
     try {
-      await _importer.commit(batch, allowMissing: _allowMissing,
+      await _importer.commit(batch, allowMissing: false,
         save: _vocabulary.commitImportRows,
         cancelled: () => _stop || !mounted,
         progress: () {
@@ -293,12 +351,15 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
       body: Column(children: [
         Padding(padding: const EdgeInsets.all(12), child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Select a manifest and optional media. Images require explicit paths; '
-              'language audio matches the file_slug. No asset is overwritten.'),
+            const Text('Select a manifest, image folder and MP3 folder. Exact file_slug matches only. No asset is overwritten.'),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: [
               OutlinedButton.icon(onPressed: _busy ? null : _pickManifest,
                 icon: const Icon(Icons.description), label: const Text('CSV / TXT / XLSX')),
+              OutlinedButton.icon(onPressed: _busy || kIsWeb ? null : () => _pickFolder(false),
+                icon: const Icon(Icons.folder_open), label: const Text('Image folder')),
+              OutlinedButton.icon(onPressed: _busy || kIsWeb ? null : () => _pickFolder(true),
+                icon: const Icon(Icons.folder_open), label: const Text('Audio folder')),
               OutlinedButton.icon(onPressed: _busy ? null : _pickMedia,
                 icon: const Icon(Icons.perm_media), label: const Text('Add media files')),
               TextButton(onPressed: _busy ? null : () => setState(() { _files = []; _batch = null; }),
@@ -320,12 +381,18 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
                   ChoiceChip(label: Text('${state.name}: ${batch.count(state)}'),
                     selected: _filter == state, onSelected: (_) => setState(() => _filter = state)),
               ]),
-              CheckboxListTile(contentPadding: EdgeInsets.zero, value: _allowMissing,
-                title: const Text('Explicitly allow entries with missing media'),
-                subtitle: const Text('Existing media is preserved. Conflicts are never imported.'),
-                onChanged: _busy ? null : (v) => setState(() => _allowMissing = v == true)),
-              FilledButton.icon(onPressed: _busy || _eligible == 0 ? null : _publish,
-                icon: const Icon(Icons.cloud_upload), label: Text('Review & publish $_eligible')),
+              Text('Total rows: ${batch.rows.length}'),
+              Text('Images matched: ${batch.rows.where(_hasImage).length} / ${batch.rows.where((r) => !_hasImage(r)).length} missing'),
+              Text('Audio matched: ${batch.rows.where(_hasAudio).length} / ${batch.rows.where((r) => !_hasAudio(r)).length} missing'),
+              if (!_test1) const Text('Intake writes are disabled outside Test1.'),
+              if (widget.contentType != 'language') const Text('Persistent drafts are available for language vocabulary only.'),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                OutlinedButton.icon(onPressed: _busy || !_test1 || widget.contentType != 'language' ||
+                    batch.count(ImportState.conflict) > 0 || (_eligible + batch.count(ImportState.missing)) == 0 ? null : _saveDrafts,
+                  icon: const Icon(Icons.save_outlined), label: const Text('Save as Draft')),
+                FilledButton.icon(onPressed: _busy || !_canPublish ? null : _publish,
+                  icon: const Icon(Icons.cloud_upload), label: Text('Publish to Live ($_eligible)')),
+              ]),
             ],
           ])),
         Expanded(child: ListView.builder(itemCount: rows.length, itemBuilder: (context, i) {
