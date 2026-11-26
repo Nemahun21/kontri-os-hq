@@ -228,7 +228,9 @@ class VocabularyImportService {
         batchKeys[batchKey] = row;
         batchInputs[batchKey] = input;
         // Images need an explicit concept mapping. No definition guessing.
-        final imageRef = optional(val('image_url')) ?? optional(val('image'));
+        final slug = data['file_slug'] as String?;
+        final imageRef = optional(val('image_url')) ?? optional(val('image')) ??
+            (slug == null || row.existingImage != null ? null : await assets.imageReferenceForSlug(slug));
         if (imageRef != null) {
           row.image = await assets.match(imageRef, audio: false);
         }
