@@ -49,6 +49,7 @@ void _validateStop(Map<String,dynamic> s){
   final id=s['id'].toString();
   if(!RegExp(r'^[a-z0-9]+(-[a-z0-9]+)*$').hasMatch(id)||id.length>80)throw FormatException('Invalid stop ID: $id');
   for(final k in ['title','objective','story']){if(!_filled(s,k))throw FormatException('$id: $k required.');}
+  if((s['hook']??'').toString().length>140)throw FormatException('$id: discovery hook must be 140 characters or less.');
   for(final k in _lists){
     final values=List<String>.from(s[k] as List);
     if(values.isEmpty||values.toSet().length!=values.length)throw FormatException('$id: $k must contain distinct references.');
@@ -76,9 +77,10 @@ List<Map<String,dynamic>> mergeMissionRows(List<List<String>> rows,List<Map<Stri
     final next=<String,dynamic>{...previous,'id':id,
       for(final k in ['title','objective','story'])k:read(k),
       for(final k in _lists)k:_values(read(k)),
+      if(headers.contains('hook'))'hook':read('hook'),
       for(final k in _credits)if(read(k).isNotEmpty)k:read(k)};
     _validateStop(next);
-    if(at<0||[..._required,..._credits].any((k)=>jsonEncode(previous[k])!=jsonEncode(next[k]))){
+    if(at<0||[..._required,'hook',..._credits].any((k)=>jsonEncode(previous[k])!=jsonEncode(next[k]))){
       for(final k in _reviews){next[k]=false;}
     }
     if(at<0){merged.add(next);}else{merged[at]=next;}
@@ -177,10 +179,10 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
   });
   Future<void> _edit(int i)async{
     final s=Map<String,dynamic>.of(_stops[i]);
-    final keys=['title','objective','story',..._lists,..._credits];
+    final keys=['title','objective','hook','story',..._lists,..._credits];
     final fields={for(final k in keys)k:TextEditingController(text:s[k] is List?(s[k] as List).join('|'):(s[k]??'').toString())};
     final result=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:Text(s['id'].toString()),content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k,helperText:_lists.contains(k)?'Separate values with |':null)))
+      for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k,helperText:_lists.contains(k)?'Separate values with |':k=='hook'?'A short question or curiosity-led headline':null)))
     ]))),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Apply'))]));
     try{
       if(result!=true||!mounted)return;
@@ -317,7 +319,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
         ]),
         const SizedBox(height:8),
         ExpansionTile(title:const Text('Import format and media matching'),tilePadding:EdgeInsets.zero,children:const [
-          Padding(padding:EdgeInsets.all(8),child:Text('Import columns: id, title, objective, story, lesson_ids, question_ids, sources. Separate references with |. Existing IDs merge; new IDs append. Name media after the stop ID or title (e.g. cotton_tree.png). Review matches and save before submitting.')),
+          Padding(padding:EdgeInsets.all(8),child:Text('Import columns: id, title, objective, story, lesson_ids, question_ids, sources. Optional: hook, media credits and licenses. Separate references with |. Existing IDs merge; new IDs append. Name media after the stop ID or title (e.g. cotton_tree.png). Review matches and save before submitting.')),
         ]),
         TextField(onChanged:(v)=>setState(()=>_search=v),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search discoveries',border:OutlineInputBorder())),
         const SizedBox(height:8),
@@ -330,7 +332,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
           title:Text('${i+1}. ${_stops[i]['title']}'),
           subtitle:Text('${_filled(_stops[i],'image_path')?'Image ✓':'Image —'} · ${_filled(_stops[i],'audio_path')?'Audio ✓':'Audio —'} · ${_readyStop(_stops[i])?'Ready':'Review pending'}'),
           children:[Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Text(_stops[i]['objective'].toString()),const SizedBox(height:6),Text(_stops[i]['story'].toString()),
+          Text(_stops[i]['objective'].toString()),if(_filled(_stops[i],'hook'))Text(_stops[i]['hook'].toString(),style:Theme.of(context).textTheme.titleMedium),const SizedBox(height:6),Text(_stops[i]['story'].toString()),
           Text('Lessons: ${(_stops[i]['lesson_ids'] as List).length} · Checks: ${(_stops[i]['question_ids'] as List).length}'),
           for(final source in _stops[i]['sources'] as List)SelectableText(source.toString(),style:Theme.of(context).textTheme.bodySmall),
           if(_filled(_stops[i],'image_path'))Text('Image: ${_stops[i]['image_path']}'),
