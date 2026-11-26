@@ -38,6 +38,8 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
   bool _busy = false;
   bool _committing = false;
   bool _stop = false;
+  bool get _folderSupported => !kIsWeb &&
+      [TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS].contains(defaultTargetPlatform);
   bool get _test1 => Uri.parse(Supabase.instance.client.supabaseUrl).host == 'eeeusvsefoxbgshouqjb.supabase.co';
   String _status = '';
   ImportState? _filter;
@@ -228,6 +230,28 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
   Future<void> _publish() async {
     final batch = _batch;
     if (batch == null || !_canPublish) return;
+    // The existing theme review workflow owns persisted revisions. Never
+    // create a second live identity for a previously saved draft.
+    if (widget.contentType == 'language') {
+      setState(() => _busy = true);
+      try {
+        final client = Supabase.instance.client;
+        for (final row in batch.rows.where((r) => r.state == ImportState.ready)) {
+          final revisions = await client.from('lesson_vocabulary_revisions')
+              .select('id,term,definition,file_slug,status')
+              .eq('theme_id', row.data['theme_id'] as String)
+              .inFilter('status', ['draft','pending_approval']);
+          final hasDraft = revisions.any((d) =>
+              d['file_slug'] == row.data['file_slug'] ||
+              (VocabularyImportService.identity(d) == VocabularyImportService.identity(row.data)));
+          if (hasDraft) {
+            throw StateError('This entry already has a saved draft. Complete it using Save as Draft, then publish through the existing theme review workflow.');
+          }
+        }
+      } catch (e) { _error(e); return; }
+      finally { if (mounted) setState(() => _busy = false); }
+      if (!mounted) return;
+    }
     final accepted = await showDialog<bool>(context: context, builder: (context) =>
       AlertDialog(title: const Text('Approve batch'),
         content: Text('Publish $_eligible eligible records? Existing text is not overwritten. '
@@ -356,9 +380,9 @@ class _VocabularyBulkImportScreenState extends State<VocabularyBulkImportScreen>
             Wrap(spacing: 8, runSpacing: 8, children: [
               OutlinedButton.icon(onPressed: _busy ? null : _pickManifest,
                 icon: const Icon(Icons.description), label: const Text('CSV / TXT / XLSX')),
-              OutlinedButton.icon(onPressed: _busy || kIsWeb ? null : () => _pickFolder(false),
+              OutlinedButton.icon(onPressed: _busy || !_folderSupported ? null : () => _pickFolder(false),
                 icon: const Icon(Icons.folder_open), label: const Text('Image folder')),
-              OutlinedButton.icon(onPressed: _busy || kIsWeb ? null : () => _pickFolder(true),
+              OutlinedButton.icon(onPressed: _busy || !_folderSupported ? null : () => _pickFolder(true),
                 icon: const Icon(Icons.folder_open), label: const Text('Audio folder')),
               OutlinedButton.icon(onPressed: _busy ? null : _pickMedia,
                 icon: const Icon(Icons.perm_media), label: const Text('Add media files')),
