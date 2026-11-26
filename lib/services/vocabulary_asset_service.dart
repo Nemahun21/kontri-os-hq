@@ -71,6 +71,17 @@ class VocabularyAssetService {
         .where((path) => validPath(path, audio: false)).toList()..sort();
   }
 
+  Future<String?> imageReferenceForSlug(String slug) async {
+    final names = ['png','jpg','jpeg','webp'].map((ext) => '$slug.$ext').toList();
+    final local = names.where(_locals.containsKey).toList();
+    if (local.length > 1) throw FormatException('Multiple image formats for $slug');
+    if (local.isNotEmpty) return 'images/${local.single}';
+    final remote = await _folder('images');
+    final found = names.where(remote.contains).toList();
+    if (found.length > 1) throw FormatException('Multiple stored images for $slug');
+    return found.isEmpty ? null : 'images/${found.single}';
+  }
+
   Future<VocabularyAssetMatch> match(String reference, {required bool audio}) async {
     final path = pathFromReference(reference, audio: audio);
     final slash = path.lastIndexOf('/');
