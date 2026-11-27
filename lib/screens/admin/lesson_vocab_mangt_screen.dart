@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/models/lesson_vocab.dart';
 import 'package:kohntri_os_hq/services/lesson_vocab_service.dart';
 import 'package:kohntri_os_hq/widgets/vocabulary_workspace.dart';
+import 'package:kohntri_os_hq/widgets/media_drop_zone.dart';
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -9,6 +10,21 @@ import 'dart:typed_data';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:kohntri_os_hq/services/xlsx_reader.dart';
+
+/// Port the intake branch's exact slug matching; never guess shared concepts.
+/// Bulk attachments are restricted to existing, uniquely matched drafts.
+LessonVocabulary? matchVocabularyDraftMedia(String filename, List<LessonVocabulary> rows) {
+  final name=filename.toLowerCase();
+  if(!RegExp(r'^[a-z0-9]+(?:_[a-z0-9]+)*\.(?:png|jpg|jpeg|webp|mp3)$').hasMatch(name))return null;
+  final stem=name.substring(0,name.lastIndexOf('.'));
+  final audio=name.endsWith('.mp3');
+  final matches=rows.where((r){
+    final slug=r.fileSlug;
+    if(r.contentType!='language'||slug==null||slug.isEmpty)return false;
+    return stem==slug||(audio&&RegExp('^${RegExp.escape(slug)}'+r'_v[0-9a-f]{16}$').hasMatch(stem));
+  }).toList();
+  return matches.length==1&&matches.single.status=='draft'&&matches.single.id.isNotEmpty?matches.single:null;
+}
 
 class LessonVocabularyManagementScreen extends StatefulWidget {
   final String contentType; // 'adventure' or 'language'
@@ -232,33 +248,31 @@ class _LessonVocabularyManagementScreenState
                   ),
                   if (item?.fileSlug != null) ...[
                     Text('File slug: ${item!.fileSlug}'),
-                    TextButton.icon(onPressed: saving || uploading ? null : () async {
-                      setDialogState(() => uploading=true);
-                      try {
-                        final picked=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['png','jpg','jpeg','webp']);
-                        if(picked.isNotEmpty) {
-                          final file=picked.first;
-                          final url=await _service.uploadAsset(item:item!,filename:file.name,bytes:await file.readAsBytes(),audio:false);
+                    MediaDropZone(label:'Upload shared image',help:'PNG / JPG / JPEG / WebP • 5 MB max',
+                      extensions:const ['png','jpg','jpeg','webp'],enabled:!saving&&!uploading,onFiles:(files) async {
+                        if(!ctx.mounted||saving||uploading)return;
+                        setDialogState(()=>uploading=true);
+                        try {
+                          final file=files.single;
+                          final url=await _service.uploadAsset(item:item!,filename:file.name,bytes:await file.readChecked(5*1024*1024),audio:false);
                           if(ctx.mounted) imageUrlController.text=url;
-                        }
-                      } catch(e) { if(ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('$e'))); }
-                      finally { if(ctx.mounted) setDialogState(()=>uploading=false); }
-                    },icon:const Icon(Icons.image),label:const Text('Upload shared image')),
+                        } catch(e) { if(ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('$e'))); }
+                        finally { if(ctx.mounted) setDialogState(()=>uploading=false); }
+                      }),
                   ],
                   const SizedBox(height:12),
                   TextField(controller:audioUrlController,decoration:const InputDecoration(labelText:'Audio URL (MP3)',border:OutlineInputBorder())),
-                  if(item?.fileSlug != null) TextButton.icon(onPressed:saving||uploading?null:() async {
-                    setDialogState(()=>uploading=true);
-                    try {
-                      final picked=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['mp3']);
-                      if(picked.isNotEmpty) {
-                        final file=picked.first;
-                        final url=await _service.uploadAsset(item:item!,filename:file.name,bytes:await file.readAsBytes(),audio:true);
+                  if(item?.fileSlug != null) MediaDropZone(label:'Upload target-language MP3',help:'Exact file slug • 10 MB max',
+                    extensions:const ['mp3'],enabled:!saving&&!uploading,onFiles:(files) async {
+                      if(!ctx.mounted||saving||uploading)return;
+                      setDialogState(()=>uploading=true);
+                      try {
+                        final file=files.single;
+                        final url=await _service.uploadAsset(item:item!,filename:file.name,bytes:await file.readChecked(10*1024*1024),audio:true);
                         if(ctx.mounted) audioUrlController.text=url;
-                      }
-                    } catch(e) { if(ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('$e'))); }
-                    finally { if(ctx.mounted) setDialogState(()=>uploading=false); }
-                  },icon:const Icon(Icons.audio_file),label:const Text('Upload target-language MP3')),
+                      } catch(e) { if(ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text('$e'))); }
+                      finally { if(ctx.mounted) setDialogState(()=>uploading=false); }
+                    }),
                   if(item?.fileSlug == null) const Text('Save first, then reopen to attach named assets.'),
                   const SizedBox(height: 12),
                   TextField(
@@ -665,6 +679,94 @@ List<String> _splitCsvLine(String line) {
     if(mounted) await _load();
   }
 
+  Future<void> _openBulkMedia() async {
+    if(!_isLanguage||_isLoading||_loadFailed||widget.themeId==null)return;
+    final files=await showDialog<List<MediaLocalAsset>>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('Bulk vocabulary media'),
+      content:SizedBox(width:500,child:MediaDropZone(label:'Choose saved-draft assets',
+        help:'Exact vocabulary file slug only. Shared concept images can be attached individually.',
+        extensions:const ['png','jpg','jpeg','webp','mp3'],maxFiles:100,enabled:true,
+        onFiles:(files)async{if(ctx.mounted)Navigator.pop(ctx,files); })),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Cancel'))],
+    ));
+    if(files==null||files.isEmpty||!mounted||_isLoading)return;
+    final groups=<String,List<MediaLocalAsset>>{};
+    final destinations=<String,LessonVocabulary>{};
+    final skipped=<String>[];
+    for(final file in files){
+      final row=matchVocabularyDraftMedia(file.name,_items);
+      if(row==null){skipped.add('${file.name}: no unique saved draft match');continue;}
+      final key='${row.id}:${file.name.toLowerCase().endsWith('.mp3')}';
+      groups.putIfAbsent(key,()=>[]).add(file);
+      destinations[key]=row;
+    }
+    final byRow=<String,List<MediaLocalAsset>>{};
+    final expected=<String,LessonVocabulary>{};
+    for(final entry in groups.entries){
+      if(entry.value.length!=1){
+        for(final file in entry.value){skipped.add('${file.name}: multiple files for the same draft and media type');}
+        continue;
+      }
+      final row=destinations[entry.key]!;
+      byRow.putIfAbsent(row.id,()=>[]).add(entry.value.single);
+      expected[row.id]=row;
+    }
+    if(!mounted)return;
+    final accepted=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text('Review media • ${byRow.length} matched drafts'),
+      content:SizedBox(width:540,child:SingleChildScrollView(child:Column(
+        crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,children:[
+          const Text('Attach to existing drafts only. Matched media links may be replaced. Review notes and other fields are preserved.'),
+          for(final entry in byRow.entries)for(final file in entry.value)
+            ListTile(dense:true,title:Text(file.name),subtitle:Text('→ ${expected[entry.key]!.term}')),
+          for(final reason in skipped)Text(reason),
+        ]))),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),
+          FilledButton(onPressed:byRow.isEmpty?null:()=>Navigator.pop(ctx,true),child:const Text('Attach and save drafts'))],
+    ));
+    if(accepted!=true||!mounted||_isLoading)return;
+    setState(()=>_isLoading=true);
+    var saved=0;
+    final failures=<String>[];
+    try {
+      // Re-read before writing: never replay stale review notes or old draft status.
+      final fresh=await _service.getVocabulary(contentType:'language',themeId:widget.themeId);
+      final current={for(final row in fresh)row.id:row};
+      for(final entry in byRow.entries){
+        if(!mounted)return;
+        final row=current[entry.key];
+        final before=expected[entry.key]!;
+        if(row==null||row.status!='draft'||row.fileSlug!=before.fileSlug||
+          row.imageUrl!=before.imageUrl||row.audioUrl!=before.audioUrl){
+          failures.add('${before.term}: draft or media changed; refresh and retry');continue;
+        }
+        try {
+          final values=<String,dynamic>{...row.toSupabase(),'id':row.id,'status':row.status,'review_note':row.reviewNote};
+          for(final file in entry.value){
+            final audio=file.name.toLowerCase().endsWith('.mp3');
+            if(matchVocabularyDraftMedia(file.name,fresh)?.id!=row.id)throw StateError('File no longer matches this draft.');
+            final url=await _service.uploadAsset(item:row,filename:file.name,
+              bytes:await file.readChecked((audio?10:5)*1024*1024),audio:audio);
+            values[audio?'audio_url':'image_url']=url;
+          }
+          if(!mounted)return;
+          await _service.update(LessonVocabulary.fromSupabase(values));
+          saved++;
+        }catch(e){failures.add('${row.term}: $e');}
+      }
+    }catch(e){failures.add('Could not refresh drafts: $e');}
+    if(!mounted)return;
+    await _load();
+    if(!mounted)return;
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text('$saved drafts updated • ${failures.length} failures'),
+      content:SizedBox(width:500,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,
+        crossAxisAlignment:CrossAxisAlignment.start,children:[
+          const Text('No records published. Existing upload validation remains active.'),
+          for(final reason in [...skipped,...failures])Text(reason),
+        ]))),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Done'))],
+    ));
+  }
+
   // ---------------------- BUILD ----------------------
   @override
   Widget build(BuildContext context) {
@@ -677,6 +779,7 @@ List<String> _splitCsvLine(String line) {
         foregroundColor: Colors.black,
         elevation: 0,
         actions: [
+          if(_isLanguage) IconButton(tooltip:'Bulk media: drop or browse',icon:const Icon(Icons.collections_outlined),onPressed:_isLoading||_loadFailed?null:_openBulkMedia),
           if(_isLanguage) IconButton(tooltip:'Submit theme drafts',icon:const Icon(Icons.fact_check),onPressed:_isLoading?null:()=>_reviewTheme(false)),
           if(_isLanguage && _canPublish) IconButton(tooltip:'Publish reviewed theme on Test1',icon:const Icon(Icons.publish),onPressed:_isLoading?null:()=>_reviewTheme(true)),
           if(_isLanguage) IconButton(
@@ -686,7 +789,7 @@ List<String> _splitCsvLine(String line) {
 ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _load,
+            onPressed: _isLoading ? null : _load,
             tooltip: 'Refresh',
           ),
         ],

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:kohntri_os_hq/models/heritage_mission_manifest.dart';
 import 'package:kohntri_os_hq/services/xlsx_reader.dart';
+import 'package:kohntri_os_hq/widgets/media_drop_zone.dart';
 export 'package:kohntri_os_hq/models/heritage_mission_manifest.dart';
 
 const _required=['id','title','objective','story','lesson_ids','question_ids','sources'];
@@ -101,6 +102,17 @@ List<Map<String,dynamic>> mergeMissionRows(List<List<String>> rows,List<Map<Stri
   return merged;
 }
 
+/// Manual creation uses the existing stop validator and never merges an ID.
+List<Map<String,dynamic>> appendMissionDiscovery(
+    List<Map<String,dynamic>> current, Map<String,dynamic> stop) {
+  if(current.length>=50)throw const FormatException('Use 1–50 stops.');
+  _validateStop(stop);
+  if(current.any((s)=>s['id']==stop['id'])) {
+    throw FormatException('Duplicate stop: ${stop['id']}');
+  }
+  return [...current, {...stop, for(final key in _reviews) key:false}];
+}
+
 class HeritagePilotScreen extends StatefulWidget {
   const HeritagePilotScreen({super.key});
   @override State<HeritagePilotScreen> createState()=>_HeritagePilotScreenState();
@@ -114,6 +126,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
   bool _busy=true,_failed=false,_dirty=false,_canPublish=false;
   String? _error;
   String _search='',_filter='All';
+  final _searchController=TextEditingController();
   final _thumbs=<String,Future<String>>{};
   final _expanded=<String>{};
   bool _readyStop(Map<String,dynamic> s)=>_reviews.every((k)=>s[k]==true)&&_filled(s,'image_path')&&_filled(s,'image_credit')&&_filled(s,'image_license')&&(!_filled(s,'audio_path')||(_filled(s,'audio_credit')&&_filled(s,'audio_license')));
@@ -123,7 +136,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
   bool get _editable=>!_failed&&(_status=='local'||_status=='draft');
   int get _ready=>_stops.where((s)=>_reviews.every((k)=>s[k]==true)&&_filled(s,'image_path')&&_filled(s,'image_credit')&&_filled(s,'image_license')&&(!_filled(s,'audio_path')||(_filled(s,'audio_credit')&&_filled(s,'audio_license')))).length;
   @override void initState(){super.initState();_load();}
-  @override void dispose(){_title.dispose();super.dispose();}
+  @override void dispose(){_title.dispose();_searchController.dispose();super.dispose();}
   Future<dynamic> _rpc(String action,{Map<String,dynamic>? manifest,int? expected,int? revision}) async =>
     await _db.rpc('v2_mission_action',params:{'p_action':action,'p_id':heritageMissionId,if(manifest!=null)'p_manifest':manifest,if(expected!=null)'p_expected':expected,if(revision!=null)'p_revision':revision});
   List<Map<String,dynamic>> _seed()=>[
@@ -225,30 +238,44 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
       if(editor.mounted)ScaffoldMessenger.of(editor).showSnackBar(const SnackBar(content:Text('Could not search Test1 references. Try again.')));
     }
   }
-  Future<void> _edit(int i)async{
-    final s=Map<String,dynamic>.of(_stops[i]);
-    final keys=['title','objective','hook','story',..._lists,..._credits];
+  Future<void> _edit(int? i)async{
+    if(!_editable||_busy)return;
+    final s=i==null?<String,dynamic>{}:Map<String,dynamic>.of(_stops[i]);
+    final keys=[if(i==null)'id','title','objective','hook','story',..._lists,..._credits];
     final fields={for(final k in keys)k:TextEditingController(text:s[k] is List?(s[k] as List).join('|'):(s[k]??'').toString())};
-    final result=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:Text(s['id'].toString()),content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k,helperText:_lists.contains(k)?'Separate values with |':k=='hook'?'A short question or curiosity-led headline':null)),
-        if(k=='lesson_ids'||k=='question_ids')TextButton.icon(onPressed:()=>_pickReferences(c,fields[k]!,k=='lesson_ids'),icon:const Icon(Icons.search),label:Text(k=='lesson_ids'?'Find lessons':'Find knowledge checks')),
-      ]))
-    ]))),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Apply'))]));
-    try{
-      if(result!=true||!mounted)return;
-      for(final k in keys){s[k]=_lists.contains(k)?_values(fields[k]!.text):fields[k]!.text.trim();}
-      _validateStop(s);
+    String? error;
+    try {
+      final result=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,refresh)=>AlertDialog(
+        title:Text(i==null?'Add discovery':s['id'].toString()),
+        content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          if(error!=null)Text(error!,style:TextStyle(color:Theme.of(c).colorScheme.error)),
+          for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k=='id'?'Discovery ID':k,helperText:_lists.contains(k)?'Separate values with |':k=='id'?'Lowercase letters, numbers and hyphens':k=='hook'?'A short question or curiosity-led headline':null)),
+            if(k=='lesson_ids'||k=='question_ids')TextButton.icon(onPressed:()=>_pickReferences(c,fields[k]!,k=='lesson_ids'),icon:const Icon(Icons.search),label:Text(k=='lesson_ids'?'Find lessons':'Find knowledge checks')),
+          ]))
+        ]))),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:(){
+          try {
+            for(final k in keys){s[k]=_lists.contains(k)?_values(fields[k]!.text):fields[k]!.text.trim();}
+            if(i==null){appendMissionDiscovery(_stops,s);}else{_validateStop(s);}
+            Navigator.pop(c,true);
+          }catch(e){refresh(()=>error=e.toString());}
+        },child:const Text('Apply'))])));
+      if(result!=true||!mounted||!_editable)return;
+      if(i==null){
+        final next=appendMissionDiscovery(_stops,s);
+        _searchController.clear();
+        setState((){_stops=next;_dirty=true;_error=null;_search='';_filter='All';_expanded.add(s['id'].toString());});
+        return;
+      }
       if(keys.every((k)=>jsonEncode(s[k]??'')==jsonEncode(_stops[i][k]??'')))return;
       for(final k in _reviews){s[k]=false;}
       setState((){_stops[i]=s;_dirty=true;});
     }catch(e){if(mounted)setState(()=>_error=e.toString());}
     finally{for(final c in fields.values){c.dispose();}}
   }
-  Future<void> _attach(int i,bool audio)=>_run(()async{
-    final file=await FilePicker.pickFile(type:FileType.custom,allowedExtensions:audio?const ['mp3']:const ['png','jpg','jpeg','webp']);
-    if(file==null||!mounted)return;
-    await _uploadMedia(i,file.name,await file.readAsBytes(),audio);
+  Future<void> _attach(int i,bool audio,MediaLocalAsset file)=>_run(()async{
+    if(!_editable||!mounted)return;
+    await _uploadMedia(i,file.name,await file.readChecked(15*1024*1024),audio);
   });
   Future<void> _uploadMedia(int i,String filename,Uint8List bytes,bool audio)async{
     final name=normalizeMissionFilename(filename);
@@ -272,9 +299,8 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
       }
     });
   }
-  Future<void> _bulkMedia()=>_run(()async{
-    final files=await FilePicker.pickFiles(type:FileType.custom,allowedExtensions:const ['png','jpg','jpeg','webp','mp3']);
-    if(files.isEmpty||!mounted)return;
+  Future<void> _bulkMedia(List<MediaLocalAsset> files)=>_run(()async{
+    if(!_editable||files.isEmpty||!mounted)return;
     final matches=<int,int>{};
     final destinations=<String,List<int>>{};
     final skipped=<String>[];
@@ -309,7 +335,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
     for(final e in matches.entries){
       if(!mounted)return;
       final file=files[e.key];
-      try{await _uploadMedia(e.value,file.name,await file.readAsBytes(),normalizeMissionFilename(file.name).endsWith('.mp3'));success++;}
+      try{await _uploadMedia(e.value,file.name,await file.readChecked(15*1024*1024),normalizeMissionFilename(file.name).endsWith('.mp3'));success++;}
       catch(error){failures.add('${file.name}: $error');}
     }
     if(!mounted)return;
@@ -359,8 +385,8 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
         ]),
         const SizedBox(height:12),
         Wrap(spacing:8,runSpacing:8,children:[
+          if(_editable)FilledButton.icon(onPressed:_busy||_stops.length>=50?null:()=>_edit(null),icon:const Icon(Icons.add),label:const Text('Add discovery')),
           if(_editable)OutlinedButton.icon(onPressed:_busy?null:_import,icon:const Icon(Icons.upload_file),label:const Text('Import CSV / TXT / XLSX')),
-          if(_editable)OutlinedButton.icon(onPressed:_busy?null:_bulkMedia,icon:const Icon(Icons.collections_outlined),label:const Text('Bulk media')),
           if(_editable)FilledButton(onPressed:_busy||(!_dirty&&_record!=null)?null:_save,child:const Text('Save draft')),
           if(_status=='draft')OutlinedButton(onPressed:_busy||_dirty||_ready!=_stops.length?null:()=>_transition('submit'),child:const Text('Submit')),
           if(_status=='submitted')OutlinedButton(onPressed:_busy?null:()=>_transition('reopen'),child:const Text('Reopen')),
@@ -370,10 +396,12 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
           if(_status=='published'&&_canPublish&&_history.any((r)=>r['status']=='archived'))TextButton(onPressed:_busy?null:_rollback,child:const Text('Restore revision')),
         ]),
         const SizedBox(height:8),
+        if(_editable)MediaDropZone(label:'Bulk media',help:'Exact stop ID/title • images and MP3 • up to 15 MB each',
+          extensions:const ['png','jpg','jpeg','webp','mp3'],maxFiles:100,enabled:!_busy,onFiles:_bulkMedia),
         ExpansionTile(title:const Text('Import format and media matching'),tilePadding:EdgeInsets.zero,children:const [
           Padding(padding:EdgeInsets.all(8),child:Text('Import columns: id, title, objective, story, lesson_ids, question_ids, sources. Optional: hook, media credits and licenses. Separate references with |. Existing IDs merge; new IDs append. Name media after the stop ID or title (e.g. cotton_tree.png). Review matches and save before submitting.')),
         ]),
-        TextField(onChanged:(v)=>setState(()=>_search=v),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search discoveries',border:OutlineInputBorder())),
+        TextField(controller:_searchController,onChanged:(v)=>setState(()=>_search=v),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search discoveries',border:OutlineInputBorder())),
         const SizedBox(height:8),
         Wrap(spacing:6,children:[for(final filter in ['All','Needs review','Missing image','Missing audio','Ready'])ChoiceChip(label:Text(filter),selected:_filter==filter,onSelected:(_)=>setState(()=>_filter=filter))]),
         if(!_stops.any(_visible))const Padding(padding:EdgeInsets.all(16),child:Text('No matching discoveries.')),
@@ -390,10 +418,15 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
           if(_filled(_stops[i],'image_path'))Text('Image: ${_stops[i]['image_path']}'),
           if(_filled(_stops[i],'audio_path'))Text('Audio: ${_stops[i]['audio_path']}'),
           Wrap(spacing:6,children:[for(final k in _reviews)FilterChip(label:Text(k.replaceAll('_approved','')),selected:_stops[i][k]==true,onSelected:!_editable||_busy?null:(v)=>setState((){_stops[i][k]=v;_dirty=true;}))]),
+          if(_editable)...[
+            MediaDropZone(key:ValueKey('image-${_stops[i]['id']}'),label:'Attach image',help:'PNG / JPG / JPEG / WebP • 15 MB max',
+              extensions:const ['png','jpg','jpeg','webp'],enabled:!_busy,onFiles:(files)=>_attach(i,false,files.single)),
+            const SizedBox(height:8),
+            MediaDropZone(key:ValueKey('audio-${_stops[i]['id']}'),label:'Attach MP3',help:'MP3 • 15 MB max',
+              extensions:const ['mp3'],enabled:!_busy,onFiles:(files)=>_attach(i,true,files.single)),
+          ],
           if(_editable)Wrap(spacing:6,children:[
             TextButton(onPressed:_busy?null:()=>_edit(i),child:const Text('Edit / credit')),
-            TextButton(onPressed:_busy?null:()=>_attach(i,false),child:const Text('Attach image')),
-            TextButton(onPressed:_busy?null:()=>_attach(i,true),child:const Text('Attach MP3')),
             IconButton(tooltip:'Move up',onPressed:_busy||i==0?null:()=>setState((){final s=_stops.removeAt(i);_stops.insert(i-1,s);_dirty=true;}),icon:const Icon(Icons.arrow_upward)),
             IconButton(tooltip:'Move down',onPressed:_busy||i==_stops.length-1?null:()=>setState((){final s=_stops.removeAt(i);_stops.insert(i+1,s);_dirty=true;}),icon:const Icon(Icons.arrow_downward)),
             TextButton(onPressed:_busy||_stops.length==1?null:()async{if(await _confirm('Remove stop?','The saved revision remains unchanged until you save.')){if(mounted)setState((){_stops.removeAt(i);_dirty=true;});}},child:const Text('Remove')),
