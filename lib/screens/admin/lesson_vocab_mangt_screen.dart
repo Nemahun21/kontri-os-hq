@@ -120,6 +120,7 @@ class _LessonVocabularyManagementScreenState
       text: item?.pronunciation ?? '',
     );
     final exampleController = TextEditingController(text: item?.example ?? '');
+    final reviewController = TextEditingController(text: item?.reviewNote ?? '');
     final emojiController = TextEditingController(text: item?.emoji ?? '');
     final positionController = TextEditingController(
       text: (item?.position ?? 1).toString(),
@@ -217,6 +218,10 @@ class _LessonVocabularyManagementScreenState
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  TextField(controller: reviewController,maxLines:3,
+                    decoration:const InputDecoration(labelText:'Editorial review note (HQ only)',
+                      helperText:'Clear after native-speaker validation.',border:OutlineInputBorder())),
                   const SizedBox(height: 12),
                   TextField(
                     controller: imageUrlController,
@@ -360,6 +365,7 @@ class _LessonVocabularyManagementScreenState
                   example: exampleController.text.trim().isEmpty
                       ? null
                       : exampleController.text.trim(),
+                  reviewNote: reviewController.text.trim(),
                   emoji: emojiController.text.trim().isEmpty
                       ? null
                       : emojiController.text.trim(),
@@ -400,7 +406,7 @@ class _LessonVocabularyManagementScreenState
       ),
     );
 
-    for(final controller in [termController,definitionController,pronunciationController,exampleController,emojiController,positionController,imageUrlController,audioUrlController]) {controller.dispose();}
+    for(final controller in [termController,definitionController,pronunciationController,exampleController,reviewController,emojiController,positionController,imageUrlController,audioUrlController]) {controller.dispose();}
     if (result == true && mounted) _load();
   }
 
@@ -641,6 +647,10 @@ List<String> _splitCsvLine(String line) {
   Future<void> _reviewTheme(bool publish) async {
     final theme=widget.themeId;
     if(theme==null || _isLoading || (publish && !_canPublish)) return;
+    if(publish && _items.any((r)=>r.status!='published' && r.reviewNote?.trim().isNotEmpty==true)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Publication blocked: resolve all vocabulary review notes first.')));
+      return;
+    }
     final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
       title:Text(publish?'Publish approved theme on Test1?':'Submit all theme drafts?'),
       content:Text(publish?'This updates staging learner vocabulary only. Verify the QA preview first.':'All current drafts in this theme become pending approval.'),

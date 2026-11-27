@@ -14,6 +14,7 @@ class LessonVocabulary {
   final int position;
   final String? fileSlug;
   final String? status;
+  final String? reviewNote;
 
   LessonVocabulary({
     required this.id,
@@ -31,6 +32,7 @@ class LessonVocabulary {
     this.position = 1,
     this.fileSlug,
     this.status,
+    this.reviewNote,
   });
 
   factory LessonVocabulary.fromSupabase(Map<String, dynamic> json) {
@@ -50,6 +52,7 @@ class LessonVocabulary {
       position: json['position'] ?? 1,
       fileSlug: json['file_slug'],
       status: json['status'],
+      reviewNote: json['review_note'] as String?,
     );
   }
 

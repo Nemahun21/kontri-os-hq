@@ -77,6 +77,7 @@ class _VocabularyWorkspaceState extends State<VocabularyWorkspace> {
     final dark=theme.brightness==Brightness.dark;
     final accent=dark?const Color(0xFFA7D9B9):const Color(0xFF245B43);
     final r=VocabularyReadiness.fromRows(widget.items);
+    final blocked=widget.items.where((r)=>workspaceStatus(r)!='published'&&r.reviewNote?.trim().isNotEmpty==true).length;
     final rows=filterVocabularyWorkspace(widget.items,search:_search,stage:_stage,status:_status,media:_media);
     Widget metric(String label,int count,int total)=>SizedBox(width:145,child:Card(
       elevation:0,child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -104,8 +105,9 @@ class _VocabularyWorkspaceState extends State<VocabularyWorkspace> {
           FilledButton.icon(onPressed:widget.onAdd,icon:const Icon(Icons.add),label:const Text('New draft')),
           OutlinedButton.icon(onPressed:widget.onImport,icon:const Icon(Icons.upload_file),label:const Text('Import')),
           OutlinedButton.icon(onPressed:r.drafts==0?null:widget.onSubmit,icon:const Icon(Icons.fact_check_outlined),label:const Text('Submit drafts')),
-          if(widget.canPublish) OutlinedButton.icon(onPressed:r.pending==0||r.drafts>0?null:widget.onPublish,icon:const Icon(Icons.publish),label:const Text('Publish on Test1')),
+          if(widget.canPublish) OutlinedButton.icon(onPressed:r.pending==0||r.drafts>0||blocked>0?null:widget.onPublish,icon:const Icon(Icons.publish),label:const Text('Publish on Test1')),
         ]),
+        if(blocked>0) Text('Publication blocked: $blocked vocabulary review notes must be cleared.'),
         const SizedBox(height:16),
         TextField(controller:_searchController,onChanged:(v)=>setState(()=>_search=v),
           decoration:InputDecoration(labelText:'Search words, meanings, examples or slugs',prefixIcon:const Icon(Icons.search),
@@ -133,10 +135,12 @@ class _VocabularyWorkspaceState extends State<VocabularyWorkspace> {
               Wrap(spacing:8,runSpacing:4,children:[
                 Text(workspaceStage(row.difficulty),style:TextStyle(color:accent,fontWeight:FontWeight.w600)),
                 Text(workspaceStatusLabel(row)),
+                if(row.reviewNote?.trim().isNotEmpty==true) const Chip(label:Text('Review pending')),
                 Text('Position ${row.position}'),
-                Text(workspaceHasLink(row.imageUrl)?'Image linked':'No image'),
-                Text(workspaceHasLink(row.audioUrl)?'Audio linked':'No audio'),
+                if(workspaceHasLink(row.imageUrl)) const Text('Image linked'),
+                if(workspaceHasLink(row.audioUrl)) const Text('Audio linked'),
               ]),
+              if(row.reviewNote?.trim().isNotEmpty==true) Text(row.reviewNote!),
               const SizedBox(height:8),
               Wrap(spacing:4,runSpacing:4,children:[
                 TextButton.icon(onPressed:()=>showVocabularyPreview(context,row),icon:const Icon(Icons.visibility_outlined),label:const Text('Preview')),

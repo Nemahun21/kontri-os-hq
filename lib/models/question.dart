@@ -86,6 +86,9 @@ class Question {
   final String? language;
   final String? themeId;
   final int? level;
+  // HQ-only metadata; never part of the generic content write payload.
+  final String? publicationStatus;
+  final String? reviewNote;
 
   // ---- New scenario fields ----
   final String? scenario;
@@ -108,6 +111,8 @@ class Question {
     this.language,
     this.themeId,
     this.level,
+    this.publicationStatus,
+    this.reviewNote,
     this.scenario,
     this.wrongConsequence,
     this.culturalContext,
@@ -135,6 +140,8 @@ class Question {
       language: json['language'],
       themeId: json['theme_id'],
       level: json['level'] != null ? (json['level'] as num).toInt() : null,
+      publicationStatus: json['status'] as String?,
+      reviewNote: json['review_note'] as String?,
       scenario: json['scenario'] as String?,
       wrongConsequence: json['wrong_consequence'] as String?,
       culturalContext: json['cultural_context'] as String?,
@@ -200,6 +207,8 @@ class Question {
       language: language ?? this.language,
       themeId: themeId ?? this.themeId,
       level: level ?? this.level,
+      publicationStatus: publicationStatus,
+      reviewNote: reviewNote,
       scenario: scenario ?? this.scenario,
       wrongConsequence: wrongConsequence ?? this.wrongConsequence,
       culturalContext: culturalContext ?? this.culturalContext,

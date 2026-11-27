@@ -37,6 +37,8 @@ class ThemeQuestionsScreen extends StatelessWidget {
           initialLanguageId: languageId, // 👈
           initialThemeId: themeId,
           languageMode: true,
+          onSaveReviewNote: (q, note) => service.saveReviewNote(q.id, themeId, q.reviewNote, note),
+          onPublishDraft: (q) => service.publishDraft(q.id, themeId),
           fetchQuestions: () async {
             final langQuestions = await service.getQuestionsForTheme(themeId);
             return langQuestions.map((lq) => lq.toQuestion()).toList();
@@ -70,10 +72,16 @@ class ThemeQuestionsScreen extends StatelessWidget {
                 await service.updateQuestion(lq);
               }
             } else {
+              final data = lq.toSupabase();
+              if (q.id.isEmpty) {
+                data.remove('id');
+                data['status'] = 'draft';
+                data['review_note'] = 'native-speaker validation pending';
+              }
               await PendingOperationService().enqueue(
                 'language_questions',
                 q.id.isEmpty ? 'insert' : 'update',
-                lq.toSupabase()..remove('id'),
+                data,
               );
             }
             return true;

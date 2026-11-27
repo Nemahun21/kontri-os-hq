@@ -17,6 +17,8 @@ class LanguageQuestion {
   final double? trimEnd;
   final DateTime? createdAt;
   final Map<String, dynamic>? typeData;
+  final String? status;
+  final String? reviewNote;
 
   LanguageQuestion({
     required this.id,
@@ -35,6 +37,8 @@ class LanguageQuestion {
     this.trimEnd,
     this.createdAt,
     this.typeData,
+    this.status,
+    this.reviewNote,
   });
 
   factory LanguageQuestion.fromSupabase(Map<String, dynamic> json) {
@@ -55,6 +59,8 @@ class LanguageQuestion {
       trimEnd: json['trim_end']?.toDouble(),
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       typeData: json['type_data'] as Map<String, dynamic>?,
+      status: json['status'] as String?,
+      reviewNote: json['review_note'] as String?,
     );
   }
 
@@ -74,10 +80,14 @@ class LanguageQuestion {
       'audio_url': audioUrl,
       'trim_start': trimStart,
       'trim_end': trimEnd,
-      'created_at': createdAt?.toIso8601String(),
+      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       'type_data': typeData,
     };
   }
+
+  Map<String, dynamic> toAdminCache() => {
+    ...toSupabase(), 'status': status, 'review_note': reviewNote,
+  };
 
   /// Convert to a standard Question for admin display/editing
   Question toQuestion() {
@@ -111,7 +121,10 @@ class LanguageQuestion {
       difficulty: Difficulty.medium, // default, not used
       imageUrls: imageUrls,
       level: position,
-      typeData: typeData,
+      typeData: mergedTypeData,
+      themeId: themeId,
+      publicationStatus: status,
+      reviewNote: reviewNote,
     );
   }
 

@@ -995,7 +995,7 @@ Future<void> _startReviewQueue() async {
           throw Exception('Theme ID is missing.');
         }
         final base = _buildCurrentObject() as LanguageQuestion;
-        String? imageUrl = widget.languageQuestion?.imageUrl;
+        String? imageUrl = widget.languageQuestion?.imageUrl ?? widget.question?.imageUrls?.values.firstOrNull;
         if (_selectedType == QuestionType.imageChoice ||
             _selectedType == QuestionType.dragAndDrop) {
           for (int i = 0; i < _selectedImages.length; i++) {

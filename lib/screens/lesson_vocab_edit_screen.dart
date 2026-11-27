@@ -34,6 +34,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
   late TextEditingController _termCtrl;
   late TextEditingController _defCtrl;
   late TextEditingController _exampleCtrl;
+  late TextEditingController _reviewCtrl;
   late TextEditingController _pronCtrl;
   late TextEditingController _emojiCtrl;
   late TextEditingController _audioCtrl;
@@ -66,6 +67,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
     _termCtrl = TextEditingController(text: e?.term ?? '');
     _defCtrl = TextEditingController(text: e?.definition ?? '');
     _exampleCtrl = TextEditingController(text: e?.example ?? '');
+    _reviewCtrl = TextEditingController(text: e?.reviewNote ?? '');
     _pronCtrl = TextEditingController(text: e?.pronunciation ?? '');
     _emojiCtrl = TextEditingController(text: e?.emoji ?? '');
     _audioCtrl = TextEditingController(text: e?.audioUrl ?? '');
@@ -78,6 +80,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
     _termCtrl.dispose();
     _defCtrl.dispose();
     _exampleCtrl.dispose();
+    _reviewCtrl.dispose();
     _pronCtrl.dispose();
     _emojiCtrl.dispose();
     _audioCtrl.dispose();
@@ -110,6 +113,7 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
         example: _exampleCtrl.text.trim().isEmpty
             ? null
             : _exampleCtrl.text.trim(),
+        reviewNote: _reviewCtrl.text.trim(),
         emoji: _emojiCtrl.text.trim().isEmpty ? null : _emojiCtrl.text.trim(),
         audioUrl: _audioCtrl.text.trim().isEmpty
             ? null
@@ -273,6 +277,12 @@ class _LessonVocabEditScreenState extends State<LessonVocabEditScreen> {
             ),
             const SizedBox(height: 12),
 
+            if (_contentType == 'language') ...[
+              TextFormField(controller:_reviewCtrl,maxLines:3,
+                decoration:const InputDecoration(labelText:'Editorial review note (HQ only)',
+                  helperText:'Clear after native-speaker validation.',border:OutlineInputBorder())),
+              const SizedBox(height:12),
+            ],
             // ── Example ──────────────────────────────────
             TextFormField(
               controller: _exampleCtrl,

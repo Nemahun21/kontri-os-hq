@@ -41,10 +41,21 @@ class SyncService {
 
         switch (operation) {
           case 'insert':
+            if (tableName == 'language_questions') {
+              data['status'] = 'draft';
+              data['review_note'] ??= 'native-speaker validation pending';
+            }
             await _supabase.from(tableName).insert(data);
             break;
           case 'update':
             final id = data['id'];
+            if (tableName == 'language_questions') {
+              if (id == null || id.toString().isEmpty) {
+                throw StateError('Queued language edit has no identity. Review it manually.');
+              }
+              data.remove('status');
+              data.remove('review_note');
+            }
             await _supabase.from(tableName).update(data).eq('id', id);
             break;
           case 'delete':

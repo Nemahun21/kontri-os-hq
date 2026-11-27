@@ -57,6 +57,7 @@ class LessonVocabularyService {
     if(vocab.contentType!='language') throw StateError('Adventure editing is outside this preview mission.');
     await supabase.rpc('v2_save_vocab_draft',params:{'p_row':{
       ...vocab.toSupabase(),
+      if(vocab.reviewNote != null) 'review_note':vocab.reviewNote!.trim(),
       if(vocab.id.isNotEmpty) 'id':vocab.id,
     }});
   }

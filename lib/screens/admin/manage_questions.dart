@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kohntri_os_hq/models/question.dart';
+import 'package:kohntri_os_hq/widgets/learning_question_card.dart';
 import 'package:kohntri_os_hq/screens/admin/add_edit_question.dart';
 import 'package:kohntri_os_hq/services/question_service.dart';
 
@@ -175,92 +176,12 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
                           itemCount: _filteredQuestions.length,
                           itemBuilder: (ctx, i) {
                             final q = _filteredQuestions[i];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.blue.shade50,
-                                  child: Text('${i + 1}'),
-                                ),
-                                title: Text(q.question, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Category & points row
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue.shade50,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(q.category, style: TextStyle(fontSize: 10, color: Colors.blue[700])),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber.shade50,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text('${q.points}pts', style: TextStyle(fontSize: 10, color: Colors.amber[700])),
-                                        ),
-                                      ],
-                                    ),
-                                    // Scenario (if any)
-                                    if (q.scenario != null && q.scenario!.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '📖 Scenario: ${q.scenario}',
-                                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                    // Wrong consequence (if any)
-                                    if (q.wrongConsequence != null && q.wrongConsequence!.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '💀 Consequence: ${q.wrongConsequence}',
-                                        style: TextStyle(fontSize: 12, color: Colors.red[700]),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                    // Cultural context (if any)
-                                    if (q.culturalContext != null && q.culturalContext!.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '🌍 Context: ${q.culturalContext}',
-                                        style: TextStyle(fontSize: 12, color: Colors.green[700]),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, color: Colors.blue),
-                                      onPressed: () async {
-                                        final result = await Navigator.push(
-                                          context,
-                                          MaterialPageRoute(builder: (_) => AddEditQuestionScreen(question: q)),
-                                        );
-                                        if (result == true) _loadQuestions();
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () => _deleteQuestion(q.id),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
+                            return LearningQuestionCard(key:ValueKey(q.id),question:q,
+                              onEdit:() async {
+                                final result=await Navigator.push(context,MaterialPageRoute(
+                                  builder:(_)=>AddEditQuestionScreen(question:q)));
+                                if(result==true && mounted) _loadQuestions();
+                              },onDelete:()=>_deleteQuestion(q.id));
                           },
                         ),
                 ),

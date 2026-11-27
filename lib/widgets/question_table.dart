@@ -5,9 +5,12 @@ import 'package:kohntri_os_hq/screens/admin/add_edit_question.dart';
 import 'package:kohntri_os_hq/services/pending_question_service.dart';
 import 'package:kohntri_os_hq/services/question_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:kohntri_os_hq/widgets/learning_question_card.dart';
 
 class QuestionTable extends StatefulWidget {
   final Future<List<Question>> Function() fetchQuestions;
+  final Future<void> Function(Question, String)? onSaveReviewNote;
+  final Future<void> Function(Question)? onPublishDraft;
   final Future<bool> Function(Question) saveQuestion; // for add/update
   final Future<bool> Function(String) deleteQuestion;
   final String title;
@@ -27,6 +30,8 @@ class QuestionTable extends StatefulWidget {
   const QuestionTable({
     super.key,
     required this.fetchQuestions,
+    this.onSaveReviewNote,
+    this.onPublishDraft,
     required this.saveQuestion,
     required this.deleteQuestion,
     required this.title,
@@ -67,7 +72,11 @@ class _QuestionTableState extends State<QuestionTable> {
 
   Future<void> _saveCachedQuestions(List<Question> questions) async {
     final prefs = await SharedPreferences.getInstance();
-    final json = jsonEncode(questions.map((q) => q.toSupabase()).toList());
+    final json = jsonEncode(questions.map((q) => {
+      ...q.toSupabase(), 'id': q.id,
+      if (q.publicationStatus != null) 'status': q.publicationStatus,
+      if (q.reviewNote != null) 'review_note': q.reviewNote,
+    }).toList());
     await prefs.setString(widget.cacheKey, json);
   }
 
@@ -100,6 +109,41 @@ class _QuestionTableState extends State<QuestionTable> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _editReview(Question q) async {
+    final save = widget.onSaveReviewNote;
+    if (save == null || _isOffline || _isLoading || q.publicationStatus != 'draft') return;
+    final ctrl = TextEditingController(text: q.reviewNote ?? '');
+    String? value;
+    try {
+      value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Editorial review note'),
+        content: TextField(controller: ctrl, maxLines: 4,
+          decoration: const InputDecoration(helperText: 'Clear only after native-speaker validation.')),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Cancel')),
+          FilledButton(onPressed:()=>Navigator.pop(ctx,ctrl.text),child:const Text('Save note'))],
+      ));
+    } finally {ctrl.dispose();}
+    if (value == null || !mounted) return;
+    try {await save(q,value);if(mounted) await _loadQuestions();}
+    catch(e){if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e')));}
+  }
+
+  Future<void> _publishReview(Question q) async {
+    final publish = widget.onPublishDraft;
+    if (publish == null || _isOffline || _isLoading) return;
+    final blocked = questionPublishBlock(q);
+    if (blocked != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(blocked)));return;
+    }
+    final approved = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('Publish question on Test1?'),content:Text(q.question),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Publish'))]));
+    if(approved!=true || !mounted)return;
+    try{await publish(q);if(mounted) await _loadQuestions();}
+    catch(e){if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e')));}
   }
 
   void _openEditor({Question? existing}) {
@@ -274,20 +318,18 @@ class _QuestionTableState extends State<QuestionTable> {
                             ],
                           ),
                         )
-                      : SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.vertical,
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              child: Column(
-                                children: [
-                                  _buildHeaderRow(),
-                                  ..._questions.map((q) => _buildDataRow(q)),
-                                ],
-                              ),
-                            ),
-                          ),
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: _questions.length,
+                          itemBuilder: (ctx, i) {
+                            final q = _questions[i];
+                            final pending = widget.pendingIds?.contains(q.id) ?? false;
+                            final canReview = !_isOffline && !pending && q.id.isNotEmpty && q.publicationStatus == 'draft';
+                            return LearningQuestionCard(key:ValueKey(q.id),question:q,scope:widget.title,
+                              pendingSync:pending,onEdit:()=>_openEditor(existing:q),onDelete:()=>_deleteQuestion(q.id),
+                              onReview:canReview && widget.onSaveReviewNote!=null?()=>_editReview(q):null,
+                              onPublish:canReview && widget.onPublishDraft!=null?()=>_publishReview(q):null);
+                          },
                         ),
                 ),
               ],
@@ -295,283 +337,6 @@ class _QuestionTableState extends State<QuestionTable> {
     );
   }
 
-  String _languageOptionsText(Question q) {
-    if (q.type == QuestionType.textInput) return '—';
-    if (q.type == QuestionType.fillBlank) {
-      final items = (q.typeData?['wordBank'] as List?) ?? const [];
-      return items
-          .map((item) => (item as Map?)?['text']?.toString() ?? '')
-          .where((text) => text.isNotEmpty)
-          .join(', ');
-    }
-    return q.options.join(', ');
-  }
-
-  String _languageCorrectText(Question q) {
-    if (q.type == QuestionType.textInput) return '—';
-    if (q.type == QuestionType.fillBlank) {
-      final correctIds = (q.typeData?['correctAnswers'] as Map?)?.values
-          .map((value) => value.toString())
-          .toSet();
-      final items = (q.typeData?['wordBank'] as List?) ?? const [];
-      for (final item in items) {
-        final map = item as Map?;
-        final id = map?['id']?.toString();
-        final text = map?['text']?.toString();
-        if (id != null && correctIds != null && correctIds.contains(id)) {
-          return text ?? '—';
-        }
-      }
-      return '—';
-    }
-    return (0 <= q.correctAnswerIndex && q.correctAnswerIndex < q.options.length)
-        ? q.options[q.correctAnswerIndex]
-        : '—';
-  }
-
-  Widget _buildHeaderRow() {
-    final labels =
-        widget.columnLabels ??
-        const [
-          'Level',
-          'Difficulty',
-          'Type',
-          'Questions',
-          'Options',
-          'Correct',
-          'Explanation',
-          'Scenario', // new
-          'Consequence', // new
-          'Cultural Context', // new
-          'Points',
-          'Actions',
-        ];
-    final rowChildren = widget.languageMode
-        ? [
-            _headerCell('Position', 70),
-            _headerCell('Type', 110),
-            _headerCell('Question', 230),
-            _headerCell('Options', 230),
-            _headerCell('Correct Option', 120),
-            _headerCell('Hint/Explanation', 220),
-            _headerCell('Points', 60),
-            _headerCell('Actions', 100),
-          ]
-        : [
-            _headerCell(labels[0], 50),
-            _headerCell(labels[1], 90),
-            _headerCell(labels[2], 100),
-            _headerCell(labels[3], 130),
-            _headerCell(labels[4], 130),
-            _headerCell(labels[5], 70),
-            _headerCell(labels[6], 120),
-            _headerCell(labels[7], 120),
-            _headerCell(labels[8], 110),
-            _headerCell(labels[9], 120),
-            _headerCell(labels[10], 60),
-            _headerCell(labels[11], 100),
-          ];
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: widget.accentColor.withOpacity(0.1),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      ),
-      child: Row(children: rowChildren),
-    );
-  }
-
-  Widget _headerCell(String label, double width) {
-    return SizedBox(
-      width: width,
-      child: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-
-  Widget _buildDataRow(Question q) {
-    final hasPending = widget.pendingIds?.contains(q.id) ?? false;
-    if (widget.languageMode) {
-      return GestureDetector(
-        onTap: () => _openEditor(existing: q),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-          ),
-          child: Row(
-            children: [
-              SizedBox(width: 70, child: Text(q.level?.toString() ?? '—')),
-              SizedBox(width: 110, child: Text(q.type.displayName)),
-              SizedBox(
-                width: 230,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        q.question,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (hasPending) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.sync, size: 16, color: Colors.orange),
-                    ],
-                  ],
-                ),
-              ),
-              SizedBox(
-                width: 230,
-                child: Text(
-                  _languageOptionsText(q),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              SizedBox(
-                width: 120,
-                child: Text(
-                  _languageCorrectText(q),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              SizedBox(
-                width: 220,
-                child: Text(
-                  q.explanation,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              SizedBox(width: 60, child: Text('${q.points}')),
-              SizedBox(
-                width: 100,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                      onPressed: () => _openEditor(existing: q),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                      onPressed: () => _deleteQuestion(q.id),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: () => _openEditor(existing: q),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-        ),
-        child: Row(
-          children: [
-            SizedBox(width: 50, child: Text(q.level?.toString() ?? '—')),
-            SizedBox(width: 90, child: Text(q.difficulty.name)),
-            SizedBox(width: 100, child: Text(q.type.displayName)),
-            SizedBox(
-              width: 130,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      q.question,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (hasPending) ...[
-                    const SizedBox(width: 4),
-                    Icon(Icons.sync, size: 16, color: Colors.orange),
-                  ],
-                ],
-              ),
-            ),
-            SizedBox(
-              width: 130,
-              child: Text(
-                q.options.join(', '),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(
-              width: 70,
-              child: Text(
-                (0 <= q.correctAnswerIndex && q.correctAnswerIndex < q.options.length)
-                    ? q.options[q.correctAnswerIndex]
-                    : '—',
-              ),
-            ),
-            SizedBox(
-              width: 120,
-              child: Text(
-                q.explanation,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(
-              width: 120,
-              child: Text(
-                q.scenario ?? '—',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(
-              width: 110,
-              child: Text(
-                q.wrongConsequence ?? '—',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(
-              width: 120,
-              child: Text(
-                q.culturalContext ?? '—',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(width: 60, child: Text('${q.points}')),
-            SizedBox(
-              width: 100,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                    onPressed: () => _openEditor(existing: q),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () => _deleteQuestion(q.id),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ---------- Simple Question Dialog ----------

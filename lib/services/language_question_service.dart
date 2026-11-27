@@ -25,7 +25,7 @@ Future<List<LanguageQuestion>> getAllLanguageQuestions() async {
       final questions = (response as List)
           .map((json) => LanguageQuestion.fromSupabase(json))
           .toList();
-      await _cache.set(cacheKey, questions.map((q) => q.toSupabase()).toList());
+      await _cache.set(cacheKey, questions.map((q) => q.toAdminCache()).toList());
       return questions;
     } catch (_) {
       final cached = await _cache.getList<LanguageQuestion>(cacheKey, LanguageQuestion.fromSupabase);
@@ -167,7 +167,7 @@ Future<List<LanguageQuestion>> getAllLanguageQuestions() async {
         final questions = (response as List)
             .map((json) => LanguageQuestion.fromSupabase(json))
             .toList();
-        await _cache.set(cacheKey, questions.map((q) => q.toSupabase()).toList());
+        await _cache.set(cacheKey, questions.map((q) => q.toAdminCache()).toList());
         return questions;
       } catch (_) {
         final cached = await _cache.getList<LanguageQuestion>(cacheKey, LanguageQuestion.fromSupabase);
@@ -273,6 +273,8 @@ Future<int> getTotalLanguageQuestions() async {
 
   Future<void> addQuestion(LanguageQuestion question) async {
     final data = question.toSupabase()..remove('id');
+    data['status'] = 'draft';
+    data['review_note'] = 'native-speaker validation pending';
     await supabase.from('language_questions').insert(data);
     // Invalidate caches
     await _cache.set('lang_questions_${question.themeId}', null);
@@ -287,6 +289,38 @@ Future<int> getTotalLanguageQuestions() async {
     // Invalidate caches
     await _cache.set('lang_questions_${question.themeId}', null);
     await _cache.set('language_counts', null);
+  }
+
+  Future<void> _invalidateEditorial(String themeId) async {
+    await _cache.set('lang_questions_$themeId', null);
+    await _cache.set('all_language_questions', null);
+    await _cache.set('language_counts', null);
+  }
+
+  // Online only. Compare the note read by the editor to avoid clearing a
+  // newer review flag from another administrator's edit.
+  Future<void> saveReviewNote(String id, String themeId, String? expected,
+      String note) async {
+    final clean = note.trim();
+    var query = supabase.from('language_questions')
+      .update({'review_note': clean.isEmpty ? null : clean})
+      .eq('id', id).eq('theme_id', themeId).eq('status', 'draft');
+    query = expected == null ? query.isFilter('review_note', null)
+        : query.eq('review_note', expected);
+    final row = await query.select('id').maybeSingle();
+    if (row == null) throw StateError('Draft or review note changed. Refresh before editing.');
+    await _invalidateEditorial(themeId);
+  }
+
+  Future<void> publishDraft(String id, String themeId) async {
+    // Database CHECK already requires review_note IS NULL for published rows.
+    // Predicate and CHECK make the guard atomic, including concurrent edits.
+    final row = await supabase.from('language_questions')
+      .update({'status': 'published'}).eq('id', id).eq('theme_id', themeId)
+      .eq('status', 'draft').isFilter('review_note', null)
+      .select('id').maybeSingle();
+    if (row == null) throw StateError('Cannot publish: clear the review note and refresh the draft.');
+    await _invalidateEditorial(themeId);
   }
 
   Future<void> deleteQuestion(String id) async {
