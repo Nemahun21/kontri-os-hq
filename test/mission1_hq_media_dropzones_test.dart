@@ -63,6 +63,23 @@ void main() {
     expect(saved.containsKey('verified_at'), isFalse);
   });
 
+  test('standalone discovery accepts optional connections and credits', () {
+    final row={...discovery('standalone'),'lesson_ids':<String>[],'question_ids':<String>[],
+      'sources':<String>[],'verification_method':'founder','verification_notes':'Evidence',
+      'hook':'Discover','image_path':'example.png'};
+    expect(appendMissionDiscovery([],row).single['lesson_ids'],isEmpty);
+    expect(missionDiscoveryReady({...row,'checks_approved':false}),isTrue);
+    expect(missionDiscoveryReady({...row,'rights_approved':false}),isFalse);
+    expect(missionDiscoveryReady({...row,'verification_method':'web'}),isFalse);
+    expect(missionDiscoveryReady({...row,'question_ids':[ref],'checks_approved':false}),isFalse);
+    expect(()=>appendMissionDiscovery([], {...row,'lesson_ids':['not-a-uuid']}),throwsFormatException);
+    expect(()=>appendMissionDiscovery([], {...row,'question_ids':[ref,ref]}),throwsFormatException);
+    final imported=mergeMissionRows([['id','title','objective','story'],['standalone','Title','Objective','Story']],[]);
+    expect(imported.single['question_ids'],isEmpty);
+    final merged=mergeMissionRows([['id','title','objective','story'],['standalone','Title','Objective','Story']],[{...row,'lesson_ids':[ref]}]);
+    expect(merged.single['lesson_ids'],[ref]);
+  });
+
   test('heritage exact filename matching stays unchanged', () {
     final stops = [discovery('cotton-tree'), {...discovery('fort'), 'title': 'Fort'}];
     expect(matchMissionMedia('cotton_tree.png', stops), 0);

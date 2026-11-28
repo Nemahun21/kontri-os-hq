@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,7 @@ import 'package:kohntri_os_hq/services/xlsx_reader.dart';
 import 'package:kohntri_os_hq/widgets/media_drop_zone.dart';
 export 'package:kohntri_os_hq/models/heritage_mission_manifest.dart';
 
-const _required=['id','title','objective','story','lesson_ids','question_ids','sources'];
+const _required=['id','title','objective','story'];
 const _lists=['lesson_ids','question_ids','sources'];
 const _credits=['image_credit','image_license','audio_credit','audio_license'];
 const _reviews=['facts_approved','rights_approved','checks_approved'];
@@ -41,6 +42,10 @@ bool missionVerificationEvidenceReady(Map<String,dynamic> stop){
   }
 }
 bool _filled(Map<String,dynamic> s,String k)=>(s[k]??'').toString().trim().isNotEmpty;
+bool missionDiscoveryReady(Map<String,dynamic> s)=>
+    missionVerificationEvidenceReady(s)&&_filled(s,'objective')&&_filled(s,'hook')&&
+    s['facts_approved']==true&&s['rights_approved']==true&&_filled(s,'image_path')&&
+    (((s['lesson_ids'] as List?)?.isEmpty??true)&&((s['question_ids'] as List?)?.isEmpty??true)||s['checks_approved']==true);
 /// Stable, ASCII filenames. Reject unsupported extensions; never guess media type.
 String normalizeMissionFilename(String input){
   final name=input.trim().toLowerCase();
@@ -94,8 +99,8 @@ void _validateStop(Map<String,dynamic> s){
       (s['verification_notes']??'').toString().length>2000)throw FormatException('$id: invalid verification details.');
   for(final k in _lists){
     final values=List<String>.from(s[k] as List);
-    // Sources may be empty in a draft; non-web verification uses notes.
-    if((k!='sources'&&values.isEmpty)||values.toSet().length!=values.length)throw FormatException('$id: $k must contain distinct references.');
+    // Connections and sources are optional, but supplied references must be distinct.
+    if(values.toSet().length!=values.length)throw FormatException('$id: $k must contain distinct references.');
     if(k=='sources'){
       for(final v in values){final u=Uri.tryParse(v);if(u==null||u.scheme!='https'||u.host.isEmpty)throw FormatException('$id: invalid source.');}
     }else if(values.any((v)=>!RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(v))){throw FormatException('$id: invalid reference UUID.');}
@@ -106,7 +111,7 @@ void _validateStop(Map<String,dynamic> s){
 List<Map<String,dynamic>> mergeMissionRows(List<List<String>> rows,List<Map<String,dynamic>> current){
   if(rows.length<2)throw const FormatException('Header and at least one stop required.');
   final headers=rows.first.map((v)=>v.trim().toLowerCase()).toList();
-  if(headers.toSet().length!=headers.length||_required.any((k)=>!headers.contains(k)))throw const FormatException('Required columns: id, title, objective, story, lesson_ids, question_ids, sources.');
+  if(headers.toSet().length!=headers.length||_required.any((k)=>!headers.contains(k)))throw const FormatException('Required columns: id, title, objective, story.');
   final merged=[for(final s in current)Map<String,dynamic>.of(s)];
   final seen=<String>{};
   for(var i=1;i<rows.length;i++){
@@ -119,11 +124,11 @@ List<Map<String,dynamic>> mergeMissionRows(List<List<String>> rows,List<Map<Stri
     final previous=at<0?<String,dynamic>{}:merged[at];
     final next=<String,dynamic>{...previous,'id':id,
       for(final k in ['title','objective','story'])k:read(k),
-      for(final k in _lists)k:_values(read(k)),
+      for(final k in _lists)k:headers.contains(k)?_values(read(k)):(previous[k]??<String>[]),
       if(headers.contains('hook'))'hook':read('hook'),
       for(final k in _credits)if(read(k).isNotEmpty)k:read(k)};
     _validateStop(next);
-    if(at<0||[..._required,'hook',..._credits].any((k)=>jsonEncode(previous[k])!=jsonEncode(next[k]))){
+    if(at<0||[..._required,..._lists,'hook',..._credits].any((k)=>jsonEncode(previous[k])!=jsonEncode(next[k]))){
       for(final k in _reviews){next[k]=false;}
     }
     if(at<0){merged.add(next);}else{merged[at]=next;}
@@ -161,8 +166,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
   String _search='',_filter='All';
   final _searchController=TextEditingController();
   final _thumbs=<String,Future<String>>{};
-  final _expanded=<String>{};
-  bool _readyStop(Map<String,dynamic> s)=>missionVerificationEvidenceReady(s)&&_reviews.every((k)=>s[k]==true)&&_filled(s,'image_path')&&_filled(s,'image_credit')&&_filled(s,'image_license')&&(!_filled(s,'audio_path')||(_filled(s,'audio_credit')&&_filled(s,'audio_license')));
+  bool _readyStop(Map<String,dynamic> s)=>missionDiscoveryReady(s);
   bool _visible(Map<String,dynamic> s)=>(s['title'].toString()+' '+s['id'].toString()).toLowerCase().contains(_search.toLowerCase())&&(_filter=='All'||(_filter=='Needs review'&&!_readyStop(s))||(_filter=='Missing image'&&!_filled(s,'image_path'))||(_filter=='Missing audio'&&!_filled(s,'audio_path'))||(_filter=='Ready'&&_readyStop(s)));
   Future<String> _thumbnail(String path)=>_thumbs.putIfAbsent(path,()=>_db.storage.from('mission_assets_v2').createSignedUrl(path,600));
   String get _status=>_record?['status']?.toString()??'local';
@@ -334,7 +338,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
             if(i==null)_searchController.clear();
             setState((){
               _adopt(r);_error=null;
-              if(i==null){_search='';_filter='All';_expanded.add(candidate['id'].toString());}
+              if(i==null){_search='';_filter='All';}
             });
             if(c.mounted){closed=true;Navigator.pop(c);}
           }catch(e){if(c.mounted)refresh(()=>error=e.toString());}
@@ -348,7 +352,7 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
           content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
             if(error!=null)Text(error!,style:TextStyle(color:Theme.of(c).colorScheme.error)),
             for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            TextField(controller:fields[k],enabled:!saving&&!reading,maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k=='id'?'Discovery ID':k,helperText:_lists.contains(k)?'Separate values with |':k=='id'?'Lowercase letters, numbers and hyphens':k=='hook'?'A short question or curiosity-led headline':null)),
+            TextField(controller:fields[k],enabled:!saving&&!reading,maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional for draft)':k=='id'?'Discovery ID':_credits.contains(k)?'$k (optional)':k,helperText:_lists.contains(k)?(k=='sources'?'Optional except Web verification; separate URLs with |':'Optional — choose references now or later'):k=='id'?'Lowercase letters, numbers and hyphens':k=='hook'?'A short question or curiosity-led headline':null)),
             if(k=='lesson_ids'||k=='question_ids')TextButton.icon(onPressed:saving||reading?null:()=>_pickReferences(c,fields[k]!,k=='lesson_ids'),icon:const Icon(Icons.search),label:Text(k=='lesson_ids'?'Find lessons':'Find knowledge checks')),
               if(k=='sources')...[
                 const SizedBox(height:10),
@@ -384,10 +388,6 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
     }catch(e){if(mounted)setState(()=>_error=e.toString());}
     finally{notes.dispose();for(final controller in fields.values){controller.dispose();}}
   }
-  Future<void> _attach(int i,bool audio,MediaLocalAsset file)=>_run(()async{
-    if(!_editable||!mounted)return;
-    await _uploadMedia(i,file.name,await file.readChecked(15*1024*1024),audio);
-  });
   ({String name,String mime}) _validateMissionMedia(String filename,Uint8List bytes,bool audio){
     final name=normalizeMissionFilename(filename);
     if(audio!=name.endsWith('.mp3'))throw const FormatException('Choose the correct media type.');
@@ -485,6 +485,79 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
       future:_thumbnail(path),builder:(context,snapshot)=>snapshot.hasData?Image.network(snapshot.data!,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const Icon(Icons.broken_image_outlined)):const Icon(Icons.image_outlined),
     )));
   }
+  Future<void> _preview(int i)async{
+    if(_busy||i<0||i>=_stops.length)return;
+    final stop=_stops[i];
+    final player=AudioPlayer();
+    String? audioError;
+    bool audioBusy=false;
+    try{
+      final edit=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,refresh){
+        Widget detail(String label,dynamic value)=>Padding(padding:const EdgeInsets.only(bottom:8),child:Column(
+          crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text(label,style:Theme.of(c).textTheme.labelLarge),
+            SelectableText(value is List?(value.isEmpty?'Not linked':value.join('\n')):(value??'').toString().trim().isEmpty?'Not provided':value.toString()),
+          ]));
+        return AlertDialog(
+          title:Text(stop['title'].toString()),
+          content:SizedBox(width:540,child:SingleChildScrollView(child:Column(
+            crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,children:[
+              if(_filled(stop,'image_path'))FutureBuilder<String>(
+                future:_thumbnail(stop['image_path'].toString()),
+                builder:(context,snapshot){
+                  if(snapshot.hasError)return const Text('Could not load image.');
+                  if(!snapshot.hasData)return const LinearProgressIndicator();
+                  return ConstrainedBox(constraints:const BoxConstraints(maxHeight:280),child:Image.network(snapshot.data!,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Text('Could not load image.')));
+                }),
+              detail('Discovery ID',stop['id']),detail('Hook',stop['hook']),
+              detail('Objective',stop['objective']),detail('Story',stop['story']),
+              if(_filled(stop,'audio_path'))...[
+                Wrap(spacing:8,children:[
+                  TextButton.icon(onPressed:audioBusy?null:()async{
+                    refresh((){audioBusy=true;audioError=null;});
+                    try{
+                      final url=await _db.storage.from('mission_assets_v2').createSignedUrl(stop['audio_path'].toString(),600);
+                      if(c.mounted)await player.play(UrlSource(url));
+                    }catch(e){if(c.mounted)refresh(()=>audioError=e.toString());}
+                    finally{if(c.mounted)refresh(()=>audioBusy=false);}
+                  },icon:const Icon(Icons.play_arrow),label:const Text('Play audio')),
+                  TextButton.icon(onPressed:audioBusy?null:()async{await player.stop();},icon:const Icon(Icons.stop),label:const Text('Stop audio')),
+                ]),
+                if(audioError!=null)Text(audioError!),
+              ],
+              detail('Image file',stop['image_path']),detail('Audio file',stop['audio_path']),
+              detail('Verified by',missionVerificationLabels[missionVerificationMethod(stop)]??missionVerificationMethod(stop)),
+              detail('Verification evidence',stop['verification_notes']),
+              detail('Verifier account',stop['verified_by']),detail('Verified at',stop['verified_at']),
+              detail('Sources',stop['sources']),detail('Linked lessons (IDs)',stop['lesson_ids']),
+              detail('Linked questions (IDs)',stop['question_ids']),
+              for(final key in _credits)detail(key.replaceAll('_',' '),stop[key]),
+              detail('Mission status',_status),
+              Wrap(spacing:6,children:[for(final k in _reviews)FilterChip(
+                label:Text(k=='checks_approved'?'Linked content reviewed':k.replaceAll('_approved','')),
+                selected:stop[k]==true,onSelected:!_editable||_busy?null:(v){
+                  if(k=='facts_approved'&&v&&(!missionVerificationEvidenceReady(stop)||
+                    (missionVerificationMethod(stop)=='founder'&&!_canPublish))){
+                    refresh(()=>audioError='Choose verification evidence before approving facts.');
+                    return;
+                  }
+                  setState((){stop[k]=v;_dirty=true;_error=null;});
+                  refresh(()=>audioError=null);
+                })]),
+              if(audioError!=null)Text(audioError!,style:TextStyle(color:Theme.of(c).colorScheme.error)),
+            ]))),
+          actions:[
+            TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Close')),
+            if(_editable||_status=='published')FilledButton(onPressed:_busy?null:()=>Navigator.pop(c,true),child:Text(_status=='published'?'Edit in new draft':'Edit')),
+          ],
+        );
+      }));
+      if(edit==true&&mounted){
+        if(_status=='published')setState((){_record=null;_dirty=true;});
+        await _edit(i);
+      }
+    }finally{await player.dispose();}
+  }
   @override Widget build(BuildContext context)=>Scaffold(
     appBar:AppBar(title:const Text('Content Studio'),actions:[
       IconButton(tooltip:'Refresh',onPressed:_busy?null:()async{if(!_dirty||await _confirm('Discard local changes?','Unsaved edits will be lost.')){if(mounted)await _load();}},icon:const Icon(Icons.refresh))
@@ -519,46 +592,24 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
         if(_editable)MediaDropZone(label:'Bulk media',help:'Exact stop ID/title • images and MP3 • up to 15 MB each',
           extensions:const ['png','jpg','jpeg','webp','mp3'],maxFiles:100,enabled:!_busy,onFiles:_bulkMedia),
         ExpansionTile(title:const Text('Import format and media matching'),tilePadding:EdgeInsets.zero,children:const [
-          Padding(padding:EdgeInsets.all(8),child:Text('Import columns: id, title, objective, story, lesson_ids, question_ids, sources. Optional: hook, media credits and licenses. Separate references with |. Existing IDs merge; new IDs append. Name media after the stop ID or title (e.g. cotton_tree.png). Review matches and save before submitting.')),
+          Padding(padding:EdgeInsets.all(8),child:Text('Import columns: id, title, objective, story. Optional: lesson_ids, question_ids, sources, hook, media credits and licenses. Separate references with |. Existing IDs merge; new IDs append. Name media after the stop ID or title (e.g. cotton_tree.png). Review matches and save before submitting.')),
         ]),
         TextField(controller:_searchController,onChanged:(v)=>setState(()=>_search=v),decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Search discoveries',border:OutlineInputBorder())),
         const SizedBox(height:8),
         Wrap(spacing:6,children:[for(final filter in ['All','Needs review','Missing image','Missing audio','Ready'])ChoiceChip(label:Text(filter),selected:_filter==filter,onSelected:(_)=>setState(()=>_filter=filter))]),
         if(!_stops.any(_visible))const Padding(padding:EdgeInsets.all(16),child:Text('No matching discoveries.')),
-        for(var i=0;i<_stops.length;i++)if(_visible(_stops[i]))Card(child:ExpansionTile(
-          key:ValueKey(_stops[i]['id']),initiallyExpanded:_expanded.contains(_stops[i]['id']),
-          onExpansionChanged:(v)=>setState(()=>v?_expanded.add(_stops[i]['id'].toString()):_expanded.remove(_stops[i]['id'].toString())),
-          leading:_mediaThumb(_stops[i]),
-          title:Text('${i+1}. ${_stops[i]['title']}'),
-          subtitle:Text('${_filled(_stops[i],'image_path')?'Image ✓':'Image —'} · ${_filled(_stops[i],'audio_path')?'Audio ✓':'Audio —'} · ${_readyStop(_stops[i])?'Ready':'Review pending'}'),
-          children:[Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Text(_stops[i]['objective'].toString()),if(_filled(_stops[i],'hook'))Text(_stops[i]['hook'].toString(),style:Theme.of(context).textTheme.titleMedium),const SizedBox(height:6),Text(_stops[i]['story'].toString()),
-          Text('Lessons: ${(_stops[i]['lesson_ids'] as List).length} · Checks: ${(_stops[i]['question_ids'] as List).length}'),
-          for(final source in _stops[i]['sources'] as List)SelectableText(source.toString(),style:Theme.of(context).textTheme.bodySmall),
-          if(_filled(_stops[i],'image_path'))Text('Image: ${_stops[i]['image_path']}'),
-          if(_filled(_stops[i],'audio_path'))Text('Audio: ${_stops[i]['audio_path']}'),
-          Wrap(spacing:6,children:[for(final k in _reviews)FilterChip(label:Text(k.replaceAll('_approved','')),selected:_stops[i][k]==true,onSelected:!_editable||_busy?null:(v){
-            if(k=='facts_approved'&&v&&(!missionVerificationEvidenceReady(_stops[i])||
-                (missionVerificationMethod(_stops[i])=='founder'&&!_canPublish))){
-              setState(()=>_error='Choose verification evidence before approving facts.');
-              return;
-            }
-            setState((){_stops[i][k]=v;_dirty=true;_error=null;});
-          })]),
-          if(_editable)...[
-            MediaDropZone(key:ValueKey('image-${_stops[i]['id']}'),label:'Attach image',help:'PNG / JPG / JPEG / WebP • 15 MB max',
-              extensions:const ['png','jpg','jpeg','webp'],enabled:!_busy,onFiles:(files)=>_attach(i,false,files.single)),
-            const SizedBox(height:8),
-            MediaDropZone(key:ValueKey('audio-${_stops[i]['id']}'),label:'Attach MP3',help:'MP3 • 15 MB max',
-              extensions:const ['mp3'],enabled:!_busy,onFiles:(files)=>_attach(i,true,files.single)),
-          ],
+        for(var i=0;i<_stops.length;i++)if(_visible(_stops[i]))Card(child:Column(children:[
+          ListTile(key:ValueKey(_stops[i]['id']),onTap:_busy?null:()=>_preview(i),leading:_mediaThumb(_stops[i]),
+            title:Text('${i+1}. ${_stops[i]['title']}'),
+            subtitle:Text('${_filled(_stops[i],'image_path')?'Image ✓':'Image —'} · ${_filled(_stops[i],'audio_path')?'Audio ✓':'Audio —'} · ${_readyStop(_stops[i])?'Ready':'Review pending'}'),
+            trailing:const Icon(Icons.chevron_right)),
           if(_editable)Wrap(spacing:6,children:[
             TextButton(onPressed:_busy?null:()=>_edit(i),child:const Text('Edit / credit')),
             IconButton(tooltip:'Move up',onPressed:_busy||i==0?null:()=>setState((){final s=_stops.removeAt(i);_stops.insert(i-1,s);_dirty=true;}),icon:const Icon(Icons.arrow_upward)),
             IconButton(tooltip:'Move down',onPressed:_busy||i==_stops.length-1?null:()=>setState((){final s=_stops.removeAt(i);_stops.insert(i+1,s);_dirty=true;}),icon:const Icon(Icons.arrow_downward)),
             TextButton(onPressed:_busy||_stops.length==1?null:()async{if(await _confirm('Remove stop?','The saved revision remains unchanged until you save.')){if(mounted)setState((){_stops.removeAt(i);_dirty=true;});}},child:const Text('Remove')),
           ]),
-        ]))])),
+        ])),
       ]
     ]))))); 
 }
