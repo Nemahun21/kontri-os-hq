@@ -36,8 +36,31 @@ void main() {
     }
     expect(() => appendMissionDiscovery(old, first), throwsFormatException);
     expect(() => appendMissionDiscovery(old, {...added, 'story': ''}), throwsFormatException);
-    expect(() => appendMissionDiscovery(old, {...added, 'sources': <String>[]}), throwsFormatException);
+    expect(appendMissionDiscovery(old, {...added, 'sources': <String>[], 'verification_method':'pending'}).last['verification_method'], 'pending');
+    expect(() => appendMissionDiscovery(old, {...added, 'sources': ['http://example.com']}), throwsFormatException);
     expect(() => appendMissionDiscovery(List.generate(50, (i) => discovery('stop-$i')), added), throwsFormatException);
+  });
+
+  test('verification options use existing manifest values and evidence rules', () {
+    expect(missionVerificationLabels, {'pending':'Pending','founder':'Founder','community':'Community','document':'Documentary','web':'Web'});
+    final stop=discovery('new-stop');
+    expect(missionVerificationMethod(stop), 'web');
+    expect(missionVerificationMethod({...stop,'sources': <String>[]}), 'pending');
+    expect(missionVerificationEvidenceReady({...stop,'verification_method':'pending'}), isFalse);
+    expect(missionVerificationEvidenceReady({...stop,'verification_method':'web'}), isTrue);
+    expect(missionVerificationEvidenceReady({...stop,'verification_method':'web','sources': <String>[]}), isFalse);
+    for(final method in ['founder','community','document']){
+      final row={...stop,'verification_method':method,'sources': <String>[]};
+      expect(missionVerificationEvidenceReady(row), isFalse);
+      expect(missionVerificationEvidenceReady({...row,'verification_notes':'Evidence'}), isTrue);
+    }
+    expect(() => appendMissionDiscovery([], {...stop,'verification_method':'documentary'}), throwsFormatException);
+    final saved=appendMissionDiscovery([], {...stop,'verification_method':'document','verification_notes':'Evidence','verified_by':ref,'verified_at':'2026-11-28'}).single;
+    expect(saved['verification_method'], 'document');
+    expect(saved['verification_notes'], 'Evidence');
+    expect(saved['facts_approved'], isFalse);
+    expect(saved.containsKey('verified_by'), isFalse);
+    expect(saved.containsKey('verified_at'), isFalse);
   });
 
   test('heritage exact filename matching stays unchanged', () {

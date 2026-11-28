@@ -13,6 +13,33 @@ const _required=['id','title','objective','story','lesson_ids','question_ids','s
 const _lists=['lesson_ids','question_ids','sources'];
 const _credits=['image_credit','image_license','audio_credit','audio_license'];
 const _reviews=['facts_approved','rights_approved','checks_approved'];
+// Existing Test1 manifest values, with a UI-only Documentary label.
+const missionVerificationLabels=<String,String>{
+  'pending':'Pending','founder':'Founder','community':'Community',
+  'document':'Documentary','web':'Web',
+};
+String missionVerificationMethod(Map<String,dynamic> stop){
+  final value=(stop['verification_method']??'').toString();
+  if(value.isNotEmpty)return value;
+  final sources=stop['sources'];
+  return sources is List&&sources.isNotEmpty?'web':'pending';
+}
+bool missionVerificationEvidenceReady(Map<String,dynamic> stop){
+  switch(missionVerificationMethod(stop)){
+    case 'web':
+      final sources=stop['sources'];
+      return sources is List&&sources.isNotEmpty&&sources.every((v){
+        final uri=Uri.tryParse(v.toString());
+        return uri!=null&&uri.scheme=='https'&&uri.host.isNotEmpty;
+      });
+    case 'founder':
+    case 'community':
+    case 'document':
+      final notes=(stop['verification_notes']??'').toString();
+      return notes.trim().isNotEmpty&&notes.length<=2000;
+    default:return false;
+  }
+}
 bool _filled(Map<String,dynamic> s,String k)=>(s[k]??'').toString().trim().isNotEmpty;
 /// Stable, ASCII filenames. Reject unsupported extensions; never guess media type.
 String normalizeMissionFilename(String input){
@@ -63,9 +90,12 @@ void _validateStop(Map<String,dynamic> s){
   if(!RegExp(r'^[a-z0-9]+(-[a-z0-9]+)*$').hasMatch(id)||id.length>80)throw FormatException('Invalid stop ID: $id');
   for(final k in ['title','objective','story']){if(!_filled(s,k))throw FormatException('$id: $k required.');}
   if((s['hook']??'').toString().length>140)throw FormatException('$id: discovery hook must be 140 characters or less.');
+  if(!missionVerificationLabels.containsKey(missionVerificationMethod(s))||
+      (s['verification_notes']??'').toString().length>2000)throw FormatException('$id: invalid verification details.');
   for(final k in _lists){
     final values=List<String>.from(s[k] as List);
-    if(values.isEmpty||values.toSet().length!=values.length)throw FormatException('$id: $k must contain distinct references.');
+    // Sources may be empty in a draft; non-web verification uses notes.
+    if((k!='sources'&&values.isEmpty)||values.toSet().length!=values.length)throw FormatException('$id: $k must contain distinct references.');
     if(k=='sources'){
       for(final v in values){final u=Uri.tryParse(v);if(u==null||u.scheme!='https'||u.host.isEmpty)throw FormatException('$id: invalid source.');}
     }else if(values.any((v)=>!RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(v))){throw FormatException('$id: invalid reference UUID.');}
@@ -110,7 +140,10 @@ List<Map<String,dynamic>> appendMissionDiscovery(
   if(current.any((s)=>s['id']==stop['id'])) {
     throw FormatException('Duplicate stop: ${stop['id']}');
   }
-  return [...current, {...stop, for(final key in _reviews) key:false}];
+  final next=<String,dynamic>{...stop,'verification_method':missionVerificationMethod(stop),
+    for(final key in _reviews)key:false};
+  next.remove('verified_by');next.remove('verified_at');
+  return [...current,next];
 }
 
 class HeritagePilotScreen extends StatefulWidget {
@@ -129,12 +162,12 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
   final _searchController=TextEditingController();
   final _thumbs=<String,Future<String>>{};
   final _expanded=<String>{};
-  bool _readyStop(Map<String,dynamic> s)=>_reviews.every((k)=>s[k]==true)&&_filled(s,'image_path')&&_filled(s,'image_credit')&&_filled(s,'image_license')&&(!_filled(s,'audio_path')||(_filled(s,'audio_credit')&&_filled(s,'audio_license')));
+  bool _readyStop(Map<String,dynamic> s)=>missionVerificationEvidenceReady(s)&&_reviews.every((k)=>s[k]==true)&&_filled(s,'image_path')&&_filled(s,'image_credit')&&_filled(s,'image_license')&&(!_filled(s,'audio_path')||(_filled(s,'audio_credit')&&_filled(s,'audio_license')));
   bool _visible(Map<String,dynamic> s)=>(s['title'].toString()+' '+s['id'].toString()).toLowerCase().contains(_search.toLowerCase())&&(_filter=='All'||(_filter=='Needs review'&&!_readyStop(s))||(_filter=='Missing image'&&!_filled(s,'image_path'))||(_filter=='Missing audio'&&!_filled(s,'audio_path'))||(_filter=='Ready'&&_readyStop(s)));
   Future<String> _thumbnail(String path)=>_thumbs.putIfAbsent(path,()=>_db.storage.from('mission_assets_v2').createSignedUrl(path,600));
   String get _status=>_record?['status']?.toString()??'local';
   bool get _editable=>!_failed&&(_status=='local'||_status=='draft');
-  int get _ready=>_stops.where((s)=>_reviews.every((k)=>s[k]==true)&&_filled(s,'image_path')&&_filled(s,'image_credit')&&_filled(s,'image_license')&&(!_filled(s,'audio_path')||(_filled(s,'audio_credit')&&_filled(s,'audio_license')))).length;
+  int get _ready=>_stops.where(_readyStop).length;
   @override void initState(){super.initState();_load();}
   @override void dispose(){_title.dispose();_searchController.dispose();super.dispose();}
   Future<dynamic> _rpc(String action,{Map<String,dynamic>? manifest,int? expected,int? revision}) async =>
@@ -240,54 +273,141 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
   }
   Future<void> _edit(int? i)async{
     if(!_editable||_busy)return;
-    final s=i==null?<String,dynamic>{}:Map<String,dynamic>.of(_stops[i]);
+    final original=i==null?<String,dynamic>{}:Map<String,dynamic>.of(_stops[i]);
     final keys=[if(i==null)'id','title','objective','hook','story',..._lists,..._credits];
-    final fields={for(final k in keys)k:TextEditingController(text:s[k] is List?(s[k] as List).join('|'):(s[k]??'').toString())};
+    final fields={for(final k in keys)k:TextEditingController(text:original[k] is List?(original[k] as List).join('|'):(original[k]??'').toString())};
+    final notes=TextEditingController(text:(original['verification_notes']??'').toString());
+    var method=i==null?'pending':missionVerificationMethod(original);
     String? error;
-    try {
-      final result=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,refresh)=>AlertDialog(
-        title:Text(i==null?'Add discovery':s['id'].toString()),
-        content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-          if(error!=null)Text(error!,style:TextStyle(color:Theme.of(c).colorScheme.error)),
-          for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            TextField(controller:fields[k],maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k=='id'?'Discovery ID':k,helperText:_lists.contains(k)?'Separate values with |':k=='id'?'Lowercase letters, numbers and hyphens':k=='hook'?'A short question or curiosity-led headline':null)),
-            if(k=='lesson_ids'||k=='question_ids')TextButton.icon(onPressed:()=>_pickReferences(c,fields[k]!,k=='lesson_ids'),icon:const Icon(Icons.search),label:Text(k=='lesson_ids'?'Find lessons':'Find knowledge checks')),
-          ]))
-        ]))),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('Cancel')),FilledButton(onPressed:(){
-          try {
-            for(final k in keys){s[k]=_lists.contains(k)?_values(fields[k]!.text):fields[k]!.text.trim();}
-            if(i==null){appendMissionDiscovery(_stops,s);}else{_validateStop(s);}
-            Navigator.pop(c,true);
-          }catch(e){refresh(()=>error=e.toString());}
-        },child:const Text('Apply'))])));
-      if(result!=true||!mounted||!_editable)return;
-      if(i==null){
-        final next=appendMissionDiscovery(_stops,s);
-        _searchController.clear();
-        setState((){_stops=next;_dirty=true;_error=null;_search='';_filter='All';_expanded.add(s['id'].toString());});
-        return;
-      }
-      if(keys.every((k)=>jsonEncode(s[k]??'')==jsonEncode(_stops[i][k]??'')))return;
-      for(final k in _reviews){s[k]=false;}
-      setState((){_stops[i]=s;_dirty=true;});
+    bool saving=false,reading=false;
+    ({String name,Uint8List bytes})? image,audio;
+    try{
+      await showDialog<void>(context:context,barrierDismissible:false,builder:(c)=>StatefulBuilder(builder:(c,refresh){
+        Future<void> selectMedia(List<MediaLocalAsset> files,bool isAudio)async{
+          if(saving||reading)return;
+          refresh((){reading=true;error=null;});
+          try{
+            final file=files.single;
+            final bytes=await file.readChecked(15*1024*1024);
+            _validateMissionMedia(file.name,bytes,isAudio);
+            if(!c.mounted)return;
+            refresh((){
+              final selected=(name:file.name,bytes:bytes);
+              if(isAudio){audio=selected;}else{image=selected;}
+              fields[isAudio?'audio_credit':'image_credit']!.clear();
+              fields[isAudio?'audio_license':'image_license']!.clear();
+            });
+          }catch(e){if(c.mounted)refresh(()=>error=e.toString());}
+          finally{if(c.mounted)refresh(()=>reading=false);}
+        }
+        Future<void> saveDraft()async{
+          if(saving||reading||_busy||!_editable)return;
+          refresh((){saving=true;error=null;});
+          setState(()=>_busy=true);
+          var closed=false;
+          try{
+            final candidate=<String,dynamic>{...original,
+              for(final k in keys)k:_lists.contains(k)?_values(fields[k]!.text):fields[k]!.text.trim(),
+              'verification_method':method,'verification_notes':notes.text.trim(),
+            };
+            _validateStop(candidate);
+            final changed=keys.any((k)=>jsonEncode(candidate[k]??'')!=jsonEncode(original[k]??''))||
+              method!=missionVerificationMethod(original)||
+              notes.text.trim()!=(original['verification_notes']??'').toString().trim()||image!=null||audio!=null;
+            if(i!=null&&!changed){if(c.mounted){closed=true;Navigator.pop(c);}return;}
+            for(final k in _reviews){candidate[k]=false;}
+            candidate.remove('verified_by');candidate.remove('verified_at');
+            final next=i==null?appendMissionDiscovery(_stops,candidate):[
+              for(var j=0;j<_stops.length;j++)j==i?candidate:_stops[j],
+            ];
+            final edited=i??next.length-1;
+            if(_title.text.trim().isEmpty)throw const FormatException('Mission title required.');
+            for(final stop in next){_validateStop(stop);}
+            // No storage or database writes on selection or Cancel.
+            final selectedImage=image,selectedAudio=audio;
+            if(selectedImage!=null)next[edited]['image_path']=await _storeMedia(candidate['id'].toString(),selectedImage.name,selectedImage.bytes,false);
+            if(selectedAudio!=null)next[edited]['audio_path']=await _storeMedia(candidate['id'].toString(),selectedAudio.name,selectedAudio.bytes,true);
+            if(!mounted||!c.mounted)return;
+            final r=await _rpc('save',manifest:{'title':_title.text.trim(),'stops':next},
+              expected:(_record?['edit_token'] as int?)??0,revision:_record?['revision'] as int?);
+            if(!mounted)return;
+            if(i==null)_searchController.clear();
+            setState((){
+              _adopt(r);_error=null;
+              if(i==null){_search='';_filter='All';_expanded.add(candidate['id'].toString());}
+            });
+            if(c.mounted){closed=true;Navigator.pop(c);}
+          }catch(e){if(c.mounted)refresh(()=>error=e.toString());}
+          finally{
+            if(mounted)setState(()=>_busy=false);
+            if(!closed&&c.mounted)refresh(()=>saving=false);
+          }
+        }
+        return PopScope(canPop:!saving&&!reading,child:AlertDialog(
+          title:Text(i==null?'Add discovery':original['id'].toString()),
+          content:SizedBox(width:540,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+            if(error!=null)Text(error!,style:TextStyle(color:Theme.of(c).colorScheme.error)),
+            for(final k in keys)Padding(padding:const EdgeInsets.only(bottom:10),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            TextField(controller:fields[k],enabled:!saving&&!reading,maxLines:k=='story'?5:1,decoration:InputDecoration(labelText:k=='hook'?'Discovery hook (optional)':k=='id'?'Discovery ID':k,helperText:_lists.contains(k)?'Separate values with |':k=='id'?'Lowercase letters, numbers and hyphens':k=='hook'?'A short question or curiosity-led headline':null)),
+            if(k=='lesson_ids'||k=='question_ids')TextButton.icon(onPressed:saving||reading?null:()=>_pickReferences(c,fields[k]!,k=='lesson_ids'),icon:const Icon(Icons.search),label:Text(k=='lesson_ids'?'Find lessons':'Find knowledge checks')),
+              if(k=='sources')...[
+                const SizedBox(height:10),
+                DropdownButtonFormField<String>(
+                  value:missionVerificationLabels.containsKey(method)?method:null,
+                  decoration:const InputDecoration(labelText:'Verified by'),
+                  items:[for(final entry in missionVerificationLabels.entries)
+                    DropdownMenuItem(value:entry.key,child:Text(entry.value))],
+                  onChanged:saving||reading?null:(value){if(value!=null)refresh(()=>method=value);},
+                ),
+                const SizedBox(height:10),
+                TextField(controller:notes,enabled:!saving&&!reading,maxLines:3,maxLength:2000,
+                  decoration:InputDecoration(labelText:'Verification evidence notes',
+                    helperText:method=='web'?'Web requires source URLs before fact approval.':
+                    method=='pending'?'Pending drafts cannot be submitted.':
+                    method=='founder'?'Founder requires super-admin fact approval and evidence notes.':
+                    'Evidence notes required before fact approval.',helperMaxLines:3)),
+                const SizedBox(height:10),
+                MediaDropZone(label:'Attach image',help:image?.name??(_filled(original,'image_path')?original['image_path'].toString():'PNG / JPG / JPEG / WebP • 15 MB max'),
+                  extensions:const ['png','jpg','jpeg','webp'],enabled:!saving&&!reading,onFiles:(files)=>selectMedia(files,false)),
+                const SizedBox(height:8),
+                MediaDropZone(label:'Attach MP3',help:audio?.name??(_filled(original,'audio_path')?original['audio_path'].toString():'MP3 • 15 MB max'),
+                  extensions:const ['mp3'],enabled:!saving&&!reading,onFiles:(files)=>selectMedia(files,true)),
+              ],
+            ])),
+            if(saving||reading)const LinearProgressIndicator(),
+          ]))),actions:[
+            TextButton(onPressed:saving||reading?null:()=>Navigator.pop(c),child:const Text('Cancel')),
+            FilledButton(onPressed:saving||reading?null:saveDraft,child:const Text('Save draft')),
+          ],
+        ));
+      }));
     }catch(e){if(mounted)setState(()=>_error=e.toString());}
-    finally{for(final c in fields.values){c.dispose();}}
+    finally{notes.dispose();for(final controller in fields.values){controller.dispose();}}
   }
   Future<void> _attach(int i,bool audio,MediaLocalAsset file)=>_run(()async{
     if(!_editable||!mounted)return;
     await _uploadMedia(i,file.name,await file.readChecked(15*1024*1024),audio);
   });
-  Future<void> _uploadMedia(int i,String filename,Uint8List bytes,bool audio)async{
+  ({String name,String mime}) _validateMissionMedia(String filename,Uint8List bytes,bool audio){
     final name=normalizeMissionFilename(filename);
     if(audio!=name.endsWith('.mp3'))throw const FormatException('Choose the correct media type.');
     final mime=audio?'audio/mpeg':name.endsWith('.png')?'image/png':name.endsWith('.webp')?'image/webp':'image/jpeg';
     if(bytes.length<12||bytes.length>15*1024*1024)throw const FormatException('Invalid media size; maximum 15 MB.');
     final valid=audio?((bytes[0]==73&&bytes[1]==68&&bytes[2]==51)||(bytes[0]==255&&(bytes[1]&224)==224)):mime=='image/png'?listEquals(bytes.sublist(0,8),[137,80,78,71,13,10,26,10]):mime=='image/webp'?String.fromCharCodes(bytes.sublist(0,4))=='RIFF'&&String.fromCharCodes(bytes.sublist(8,12))=='WEBP':bytes[0]==255&&bytes[1]==216&&bytes[2]==255;
     if(!valid)throw const FormatException('Invalid media signature.');
-    final path='$heritageMissionId/${_stops[i]['id']}/$name';
+    return (name:name,mime:mime);
+  }
+  Future<String> _storeMedia(String stopId,String filename,Uint8List bytes,bool audio)async{
+    final media=_validateMissionMedia(filename,bytes,audio);
+    final path='$heritageMissionId/$stopId/${media.name}';
+    final mime=media.mime;
     final store=_db.storage.from('mission_assets_v2');
     try{await store.uploadBinary(path,bytes,fileOptions:FileOptions(contentType:mime,upsert:false));}
     on StorageException catch(e){if(e.statusCode!='409'&&e.statusCode!='400')rethrow;final existing=await store.download(path);if(!listEquals(existing,bytes))throw StateError('Different file already exists. Use a new versioned filename.');}
+    return path;
+  }
+  Future<void> _uploadMedia(int i,String filename,Uint8List bytes,bool audio)async{
+    final path=await _storeMedia(_stops[i]['id'].toString(),filename,bytes,audio);
     if(mounted)setState((){
       final key=audio?'audio_path':'image_path';
       if(_stops[i][key]!=path){
@@ -417,7 +537,14 @@ class _HeritagePilotScreenState extends State<HeritagePilotScreen>{
           for(final source in _stops[i]['sources'] as List)SelectableText(source.toString(),style:Theme.of(context).textTheme.bodySmall),
           if(_filled(_stops[i],'image_path'))Text('Image: ${_stops[i]['image_path']}'),
           if(_filled(_stops[i],'audio_path'))Text('Audio: ${_stops[i]['audio_path']}'),
-          Wrap(spacing:6,children:[for(final k in _reviews)FilterChip(label:Text(k.replaceAll('_approved','')),selected:_stops[i][k]==true,onSelected:!_editable||_busy?null:(v)=>setState((){_stops[i][k]=v;_dirty=true;}))]),
+          Wrap(spacing:6,children:[for(final k in _reviews)FilterChip(label:Text(k.replaceAll('_approved','')),selected:_stops[i][k]==true,onSelected:!_editable||_busy?null:(v){
+            if(k=='facts_approved'&&v&&(!missionVerificationEvidenceReady(_stops[i])||
+                (missionVerificationMethod(_stops[i])=='founder'&&!_canPublish))){
+              setState(()=>_error='Choose verification evidence before approving facts.');
+              return;
+            }
+            setState((){_stops[i][k]=v;_dirty=true;_error=null;});
+          })]),
           if(_editable)...[
             MediaDropZone(key:ValueKey('image-${_stops[i]['id']}'),label:'Attach image',help:'PNG / JPG / JPEG / WebP • 15 MB max',
               extensions:const ['png','jpg','jpeg','webp'],enabled:!_busy,onFiles:(files)=>_attach(i,false,files.single)),
